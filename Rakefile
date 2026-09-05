@@ -20,7 +20,7 @@ end
 
 desc "Build the native extension for the current Ruby and place it in lib/"
 task compile: BUILT_SO do
-  cp BUILT_SO, LIB_SO unless FileUtils.identical?(BUILT_SO, LIB_SO)
+  cp BUILT_SO, LIB_SO unless File.exist?(LIB_SO) && FileUtils.identical?(BUILT_SO, LIB_SO)
 end
 
 desc "Remove build products"

@@ -14,8 +14,9 @@ line. Every record has a `record` field naming its kind. Readers must ignore
 record kinds and fields they do not know.
 
 Record order is: one `header`, then `event` records in `sequence` order,
-then `thread` records, then one `stats`, then one `end`. A file may end
-early (the process crashed); readers must accept a missing tail.
+then `thread` records, then `source_file` records, then one `stats`,
+then one `end`. A file may end early (the process crashed); readers must
+accept a missing tail.
 
 If the traced process forks while recording, the child writes its own file.
 Each file has exactly one `process_id`.
@@ -35,9 +36,11 @@ Each file has exactly one `process_id`.
   "clock_unit": "ns",
   "trace_start_ns": 82736178263812,
   "scheduler": { "mn_threads": false, "timeslice_ms": 100 },
-  "channels": ["cruby_internal_thread_event", "cruby_gc_tracepoint", "probe:sleep"],
+  "channels": ["cruby_internal_thread_event", "recorder", "cruby_gc_tracepoint", "probe:sleep"],
   "buffer_capacity": 262144,
-  "script": "examples/cpu_threads.rb"
+  "script": "examples/cpu_threads.rb",
+  "recorder_version": "0.1.0",
+  "recorder_thread_id": 2
 }
 ```
 
@@ -48,6 +51,9 @@ Each file has exactly one `process_id`.
   can tell "no sleep events" apart from "sleep probe was off".
 - `scheduler.mn_threads` is whether `RUBY_MN_THREADS=1` was set. It is a
   hint, not an observation; CRuby does not report scheduler mode.
+- `recorder_thread_id` is present when the recorder drained the ring from
+  a background Ruby thread. That thread is part of the trace like any
+  other; viewers should offer to hide it.
 
 ### `event`
 
@@ -87,14 +93,26 @@ always present so that its meaning is not forgotten.
 
 ```json
 { "record": "thread", "ruby_thread_id": 1, "name": "main", "main": true,
-  "native_thread_id_at_start": 9122, "seen_native_thread_ids": [9122] }
+  "first_native_thread_id": 9122, "native_thread_ids": [9122] }
 ```
 
 Emitted for every thread the recorder identified. `name` is `Thread#name`
 if it was set, `"main"` for the main thread, otherwise `null`. Names can
 only be read from `Thread` objects that were still alive at a snapshot
 (start, each drain, stop); a thread that lived and died between snapshots
-has `name: null`.
+has `name: null`. `native_thread_ids` lists the native threads on which
+events with `native_thread_role: self` were delivered; under M:N
+scheduling it can hold several.
+
+### `source_file`
+
+```json
+{ "record": "source_file", "id": 3, "path": "/app/worker.rb", "content": "def work\n..." }
+```
+
+One per file referenced by a `source_line` event (`metadata.path_id`).
+`content` is the file as it was on disk at the end of the session, or
+`null` if it was unreadable or larger than 256 KiB.
 
 ### `stats`
 
@@ -189,7 +207,7 @@ A `gvl_released` between `mutex_lock_wait` and `mutex_acquired` is
 
 | `type`        | `native_event`    | metadata |
 |---------------|-------------------|----------|
-| `source_line` | `TracePoint :line` | `path`, `line` |
+| `source_line` | `TracePoint :line` | `path_id` (see `source_file`), `line` |
 
 ### Channel `recorder`
 
@@ -198,7 +216,7 @@ A `gvl_released` between `mutex_lock_wait` and `mutex_acquired` is
 | `tracing_started`  | |
 | `tracing_stopped`  | |
 | `events_dropped`   | `count`: events the ring buffer rejected since the previous drain |
-| `thread_pool_exhausted` | `count`: events that could not be attributed to a thread |
+| `threads_unidentified` | `count`: events that could not be attributed to a thread since the previous drain |
 
 An `events_dropped` record is emitted the first time a drain notices the
 drop counter moved. Its `timestamp_ns` is the drain time, not the time of

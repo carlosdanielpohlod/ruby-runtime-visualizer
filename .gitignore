@@ -3,6 +3,8 @@
 /coverage/
 /traces/
 *.rvtrace
+!spec/fixtures/*.rvtrace
+!web/src/__fixtures__/*.rvtrace
 *.gem
 *.o
 *.so

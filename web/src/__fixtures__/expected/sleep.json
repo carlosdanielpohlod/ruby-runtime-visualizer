@@ -1,0 +1,347 @@
+{
+  "threads": {
+    "1": [
+      {
+        "state": "RUNNING",
+        "start_ns": 15279704006410,
+        "end_ns": 15279704149869,
+        "precision": "observed",
+        "native_event": null,
+        "sequence": 1
+      },
+      {
+        "state": "SUSPENDED",
+        "start_ns": 15279704149869,
+        "end_ns": 15279704182923,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 2
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279704182923,
+        "end_ns": 15279704183423,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 3
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279704183423,
+        "end_ns": 15279704317197,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 4
+      },
+      {
+        "state": "SUSPENDED",
+        "start_ns": 15279704317197,
+        "end_ns": 15279704321068,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 5
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279704321068,
+        "end_ns": 15279704321270,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 6
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279704321270,
+        "end_ns": 15279704547458,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 7
+      },
+      {
+        "state": "SUSPENDED",
+        "start_ns": 15279704547458,
+        "end_ns": 15279927434911,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 12
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279927434911,
+        "end_ns": 15279927519670,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 32
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279927519670,
+        "end_ns": 15279927591697,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 35
+      }
+    ],
+    "2": [
+      {
+        "state": "STARTED",
+        "start_ns": 15279704413371,
+        "end_ns": 15279704489316,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_STARTED",
+        "sequence": 8
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279704489316,
+        "end_ns": 15279704657518,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 9
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279704657518,
+        "end_ns": 15279704828257,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 13
+      },
+      {
+        "state": "SLEEPING",
+        "start_ns": 15279704828257,
+        "end_ns": 15279754924621,
+        "precision": "derived",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 15
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279754924621,
+        "end_ns": 15279825177785,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 17
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279825177785,
+        "end_ns": 15279825861390,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 20
+      },
+      {
+        "state": "SLEEPING",
+        "start_ns": 15279825861390,
+        "end_ns": 15279876069426,
+        "precision": "derived",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 23
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279876069426,
+        "end_ns": 15279876072669,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 24
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279876072669,
+        "end_ns": 15279876755151,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 25
+      },
+      {
+        "state": "SLEEPING",
+        "start_ns": 15279876755151,
+        "end_ns": 15279926873777,
+        "precision": "derived",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 28
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279926873777,
+        "end_ns": 15279926876806,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 29
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279926876806,
+        "end_ns": 15279927444585,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 30
+      },
+      {
+        "state": "SUSPENDED",
+        "start_ns": 15279927444585,
+        "end_ns": 15279927447314,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 33
+      },
+      {
+        "state": "EXITED",
+        "start_ns": 15279927447314,
+        "end_ns": 15279927591697,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_EXITED",
+        "sequence": 34
+      }
+    ],
+    "3": [
+      {
+        "state": "STARTED",
+        "start_ns": 15279704498240,
+        "end_ns": 15279704543529,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_STARTED",
+        "sequence": 10
+      },
+      {
+        "state": "WANTS_GVL",
+        "start_ns": 15279704543529,
+        "end_ns": 15279704942824,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_READY",
+        "sequence": 11
+      },
+      {
+        "state": "RUNNING",
+        "start_ns": 15279704942824,
+        "end_ns": 15279825035965,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_RESUMED",
+        "sequence": 16
+      },
+      {
+        "state": "SUSPENDED",
+        "start_ns": 15279825035965,
+        "end_ns": 15279825041329,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_SUSPENDED",
+        "sequence": 18
+      },
+      {
+        "state": "EXITED",
+        "start_ns": 15279825041329,
+        "end_ns": 15279927591697,
+        "precision": "observed",
+        "native_event": "RUBY_INTERNAL_THREAD_EVENT_EXITED",
+        "sequence": 19
+      }
+    ]
+  },
+  "gvl": [
+    {
+      "owner": 1,
+      "start_ns": 15279704006410,
+      "end_ns": 15279704149869,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279704149869,
+      "end_ns": 15279704183423,
+      "precision": "derived"
+    },
+    {
+      "owner": 1,
+      "start_ns": 15279704183423,
+      "end_ns": 15279704317197,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279704317197,
+      "end_ns": 15279704321270,
+      "precision": "derived"
+    },
+    {
+      "owner": 1,
+      "start_ns": 15279704321270,
+      "end_ns": 15279704547458,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279704547458,
+      "end_ns": 15279704657518,
+      "precision": "derived"
+    },
+    {
+      "owner": 2,
+      "start_ns": 15279704657518,
+      "end_ns": 15279704828257,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279704828257,
+      "end_ns": 15279704942824,
+      "precision": "derived"
+    },
+    {
+      "owner": 3,
+      "start_ns": 15279704942824,
+      "end_ns": 15279825035965,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279825035965,
+      "end_ns": 15279825177785,
+      "precision": "derived"
+    },
+    {
+      "owner": 2,
+      "start_ns": 15279825177785,
+      "end_ns": 15279825861390,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279825861390,
+      "end_ns": 15279876072669,
+      "precision": "derived"
+    },
+    {
+      "owner": 2,
+      "start_ns": 15279876072669,
+      "end_ns": 15279876755151,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279876755151,
+      "end_ns": 15279926876806,
+      "precision": "derived"
+    },
+    {
+      "owner": 2,
+      "start_ns": 15279926876806,
+      "end_ns": 15279927444585,
+      "precision": "observed"
+    },
+    {
+      "owner": null,
+      "start_ns": 15279927444585,
+      "end_ns": 15279927519670,
+      "precision": "derived"
+    },
+    {
+      "owner": 1,
+      "start_ns": 15279927519670,
+      "end_ns": 15279927591697,
+      "precision": "observed"
+    }
+  ],
+  "violations": []
+}

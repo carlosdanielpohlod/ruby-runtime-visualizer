@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ruby:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4"]
+        mn_threads: ["0", "1"]
+        exclude:
+          - ruby: "3.2"
+            mn_threads: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rake compile
+        env:
+          RV_WERROR: "1"
+      - run: bundle exec rake spec
+        env:
+          RUBY_MN_THREADS: ${{ matrix.mn_threads }}
+      - run: bundle exec exe/runtime-visualizer trace -o cpu.rvtrace examples/cpu_threads.rb
+      - run: bundle exec exe/runtime-visualizer stats cpu.rvtrace
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test -- --run
+      - run: npm run build

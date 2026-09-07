@@ -59,7 +59,7 @@ export function buildMarkers(trace: Trace): Map<number, ThreadMarkers> {
       markersFor(id).ticks.push({ kind: "probe", event });
     } else if (event.type === "source_line") {
       markersFor(id).ticks.push({ kind: "source_line", event });
-    } else if (event.type === "events_dropped" || event.type === "thread_pool_exhausted") {
+    } else if (event.type === "events_dropped" || event.type === "threads_unidentified") {
       markersFor(id).ticks.push({ kind: "recorder", event });
     }
   }

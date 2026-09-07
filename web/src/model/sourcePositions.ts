@@ -38,11 +38,10 @@ export function buildSourceIndex(trace: Trace): SourceIndex {
   return { byThread, files: Array.from(filesByPath.values()), hasLineEvents: byThread.size > 0 };
 }
 
-// The spec says metadata.path; the recorder writes a path_id that refers to
-// a source_file record. Resolve either.
+// metadata.path_id refers to a source_file record; a file the recorder could
+// not embed is still named by its id.
 export function sourcePath(trace: Trace, event: TraceEvent): string | null {
-  const { path, path_id: pathId } = event.metadata;
-  if (typeof path === "string") return path;
+  const pathId = event.metadata.path_id;
   if (typeof pathId === "number") return trace.sourceFiles.get(pathId)?.path ?? `path #${pathId}`;
   return null;
 }

@@ -31,7 +31,6 @@ export const RECORDER_EVENT_TYPES = [
   "tracing_started",
   "tracing_stopped",
   "events_dropped",
-  "thread_pool_exhausted",
   "threads_unidentified",
 ] as const;
 export type RecorderEventType = (typeof RECORDER_EVENT_TYPES)[number];
@@ -45,9 +44,8 @@ export type KnownEventType =
 
 export interface EventMetadata {
   native_thread_role?: NativeThreadRole;
-  requested_ms?: number | null;
+  requested_us?: number | null;
   mutex_id?: number;
-  path?: string;
   path_id?: number;
   line?: number;
   count?: number;
@@ -78,7 +76,7 @@ export interface TraceHeader {
   clock?: string;
   clock_unit?: string;
   trace_start_ns?: number;
-  scheduler?: { mn_threads?: boolean; timeslice_ms?: number };
+  scheduler?: { mn_threads?: boolean; timeslice_env?: string };
   channels?: string[];
   buffer_capacity?: number;
   script?: string;

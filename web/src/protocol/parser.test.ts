@@ -64,7 +64,8 @@ describe("parseTrace", () => {
     expect(trace.malformedLines).toBe(1);
     expect(trace.endNs).toBe(trace.events[trace.events.length - 1]?.timestamp_ns);
     // Threads without a thread record are still known from their events.
-    expect(trace.threads.get(2)).toMatchObject({ name: null, main: false, first_native_thread_id: 304051 });
+    // placed from its own RESUMED, not from the STARTED that ran on main's native thread
+    expect(trace.threads.get(2)).toMatchObject({ name: null, main: false, first_native_thread_id: 304135 });
   });
 
   it("ignores unknown record kinds and blank lines", () => {
@@ -74,10 +75,10 @@ describe("parseTrace", () => {
     expect(trace.malformedLines).toBe(0);
   });
 
-  it("accepts the spec's thread record field names as well as the recorder's", () => {
+  it("reads thread and source_file records", () => {
     const text = [
       '{"record":"header","trace_start_ns":10}',
-      '{"record":"thread","ruby_thread_id":1,"name":"main","main":true,"native_thread_id_at_start":9122,"seen_native_thread_ids":[9122,9130]}',
+      '{"record":"thread","ruby_thread_id":1,"name":"main","main":true,"first_native_thread_id":9122,"native_thread_ids":[9122,9130]}',
       '{"record":"source_file","id":1,"path":"/app/x.rb","content":"puts 1\\n"}',
       '{"record":"end","trace_end_ns":20}',
     ].join("\n");

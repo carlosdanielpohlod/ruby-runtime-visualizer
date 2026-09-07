@@ -79,15 +79,16 @@ describe("source positions", () => {
       '{"record":"header","trace_start_ns":0}',
       '{"record":"event","sequence":1,"timestamp_ns":0,"ruby_thread_id":1,"type":"tracing_started","source":"recorder"}',
       '{"record":"event","sequence":2,"timestamp_ns":10,"ruby_thread_id":1,"type":"source_line","source":"tracepoint","metadata":{"path_id":1,"line":3}}',
-      '{"record":"event","sequence":3,"timestamp_ns":20,"ruby_thread_id":2,"type":"source_line","source":"tracepoint","metadata":{"path":"/other.rb","line":7}}',
+      '{"record":"event","sequence":3,"timestamp_ns":20,"ruby_thread_id":2,"type":"source_line","source":"tracepoint","metadata":{"path_id":2,"line":7}}',
       '{"record":"event","sequence":4,"timestamp_ns":30,"ruby_thread_id":1,"type":"source_line","source":"tracepoint","metadata":{"path_id":1,"line":4}}',
       '{"record":"source_file","id":1,"path":"/app.rb","content":"a\\nb\\nc\\nd\\n"}',
+      '{"record":"source_file","id":2,"path":"/other.rb","content":null}',
       '{"record":"end","trace_end_ns":40}',
     ].join("\n"),
   );
   const index = buildSourceIndex(trace);
 
-  it("resolves path_id through source_file records and keeps plain paths", () => {
+  it("resolves path_id through source_file records, embedded or not", () => {
     expect(index.hasLineEvents).toBe(true);
     expect(index.files.map((f) => [f.path, f.content !== null])).toEqual([
       ["/app.rb", true],

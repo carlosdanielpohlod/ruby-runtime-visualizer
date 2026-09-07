@@ -42,14 +42,24 @@ export class TraceParser {
 
     const events = this.events.slice().sort((a, b) => a.sequence - b.sequence);
     for (const event of events) {
-      if (event.ruby_thread_id === 0 || this.threads.has(event.ruby_thread_id)) continue;
-      this.threads.set(event.ruby_thread_id, {
-        ruby_thread_id: event.ruby_thread_id,
-        name: null,
-        main: false,
-        first_native_thread_id: event.native_thread_id,
-        native_thread_ids: event.native_thread_id === null ? [] : [event.native_thread_id],
-      });
+      if (event.ruby_thread_id === 0) continue;
+      // A thread without a `thread` record (the file ended early) is placed
+      // from its own events, and only from callbacks that ran on its native
+      // thread: STARTED on 3.3+ runs on the creator.
+      const own = event.metadata.native_thread_role === "self" ? event.native_thread_id : null;
+      const known = this.threads.get(event.ruby_thread_id);
+      if (known === undefined) {
+        this.threads.set(event.ruby_thread_id, {
+          ruby_thread_id: event.ruby_thread_id,
+          name: null,
+          main: false,
+          first_native_thread_id: own,
+          native_thread_ids: own === null ? [] : [own],
+        });
+      } else if (known.name === null && !known.main && known.first_native_thread_id === null && own !== null) {
+        known.first_native_thread_id = own;
+        known.native_thread_ids = [own];
+      }
     }
 
     const first = events[0];
@@ -122,10 +132,8 @@ export class TraceParser {
   private addThread(record: Json): void {
     const id = numberOrNull(record["ruby_thread_id"]);
     if (id === null) return;
-    // The spec names these native_thread_id_at_start / seen_native_thread_ids;
-    // the recorder writes first_native_thread_id / native_thread_ids. Accept both.
-    const first = numberOrNull(record["first_native_thread_id"] ?? record["native_thread_id_at_start"]);
-    const seen = record["native_thread_ids"] ?? record["seen_native_thread_ids"];
+    const first = numberOrNull(record["first_native_thread_id"]);
+    const seen = record["native_thread_ids"];
     const nativeIds = Array.isArray(seen) ? seen.filter((n): n is number => typeof n === "number") : [];
     this.threads.set(id, {
       ruby_thread_id: id,

@@ -97,11 +97,6 @@ export const EVENT_MEANINGS: Record<string, EventMeaning> = {
     meaning:
       "The ring buffer rejected events since the previous drain. The timestamp is the drain time, not the time of the first drop; the drops happened somewhere in the preceding gap.",
   },
-  thread_pool_exhausted: {
-    channel: "recorder",
-    nativeEvent: null,
-    meaning: "Events could not be attributed to a thread (metadata.count).",
-  },
   threads_unidentified: {
     channel: "recorder",
     nativeEvent: null,

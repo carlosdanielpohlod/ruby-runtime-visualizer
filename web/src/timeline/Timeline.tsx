@@ -166,6 +166,7 @@ export function Timeline(props: TimelineProps) {
           height={Math.max(height, 1)}
           role="img"
           aria-label="Thread lanes"
+          data-visible-ns={viewport.endNs - viewport.startNs}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

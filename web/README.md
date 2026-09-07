@@ -75,49 +75,54 @@ Milestone 1 renders with SVG. It stays usable because of three rules in
 - point markers (probe boundaries, `source_line`, recorder notices) are
   bucketed by pixel column.
 
-Measured in headless Chrome (1600×1000, lanes area ~1,400 px wide) by
-dispatching shift+wheel pans and timing until the next two animation
-frames; the probe's floor is two 60 Hz frames, so "33 ms" means the render
-fitted in a single frame.
+Measured with `scripts/measure-pan.mjs` against the production build:
+headless Chrome, 1600×1000, a shift+wheel pan dispatched on the lanes and
+timed until the next two animation frames. The floor is two 60 Hz frames,
+so "33 ms" means the render fitted in a single frame. The traces come from
+`scripts/synthetic-trace.mjs`, which writes threads taking turns on one
+lock with random 20–170 µs slices; they are synthetic and say nothing
+about Ruby, only about the renderer.
 
-Synthetic trace, 100,003 events, 8 threads, ~100k state segments, 2.8 s:
+```sh
+npm run build
+node scripts/synthetic-trace.mjs --events 100000 --threads 8 > /tmp/synthetic.rvtrace
+node scripts/measure-pan.mjs /tmp/synthetic.rvtrace
+```
+
+Synthetic trace, 100,000 events, 8 threads, 3.2 s (load: 0.86 s):
 
 | Visible window | `rect` / `line` elements in the lanes | Pan (median / max) |
 |---|---|---|
-| whole trace (2.8 s), everything merged | 1,753 / 2,037 | 52 ms / 65 ms |
-| 800 ms, segments around 1 px | 7,698 / 956 | 144 ms / 155 ms |
-| 200 ms | 3,378 / 298 | 71 ms / 87 ms |
-| 70 ms | 1,527 / 109 | 33 ms / 33 ms |
-| 20 ms and closer | ≤ 1,092 | 33 ms |
+| whole trace (3183 ms), everything merged | 59 / 19 | 33 ms / 34 ms |
+| 1747 ms | 58 / 18 | 33 ms / 34 ms |
+| 710 ms | 1,770 / 18 | 33 ms / 34 ms |
+| 184 ms, segments around 1 px | 3,891 / 18 | 34 ms / 55 ms |
+| 64 ms | 2,963 / 18 | 33 ms / 34 ms |
+| 19 ms | 1,116 / 18 | 33 ms / 33 ms |
 
-Synthetic trace, 300,001 events, 16 threads, ~300k segments, 8 s:
+Synthetic trace, 300,000 events, 16 threads, 9.6 s (load: 1.9 s):
 
 | Visible window | `rect` / `line` elements | Pan (median / max) |
 |---|---|---|
-| whole trace (8 s) | 825 / 4,661 | 125 ms / 143 ms |
-| 2 s | 9,978 / 2,000 | 213 ms / 221 ms |
-| 700 ms | 10,494 / 883 | 203 ms / 210 ms |
-| 200 ms | 4,311 / 292 | 89 ms / 93 ms |
-| 60 ms | 1,476 / 113 | 37 ms / 46 ms |
-| 18 ms | 1,010 / 52 | 33 ms |
-
-Loading (fetch excluded): parsing the 30 MB / 100k-event file takes about
-0.6 s and building the model 85 ms; the 12 MB / 45k-event `--lines` trace
-parses in 0.2 s.
+| whole trace (9564 ms) | 91 / 27 | 33 ms / 34 ms |
+| 1837 ms | 155 / 26 | 33 ms / 34 ms |
+| 747 ms, 16 lanes of ~1 px segments | 15,565 / 26 | 123 ms / 124 ms |
+| 194 ms | 4,093 / 26 | 33 ms / 37 ms |
+| 68 ms | 3,164 / 26 | 33 ms / 35 ms |
+| 18 ms | 1,018 / 26 | 33 ms / 34 ms |
 
 What this says about the SVG approach:
 
-- Up to roughly 3,000 elements in the lanes a pan or zoom step renders in one
-  frame. This covers traces of a few threads at every zoom level, because
-  merging bounds the element count by lane width, not by segment count.
-- Between 3,000 and 5,000 elements a step costs two to three frames: still
-  fine for interaction, noticeable during continuous panning.
-- Above ~8,000 elements — 8+ lanes whose segments are all about a pixel wide,
-  or 16 lanes with a few thousand ticks — a step costs 150–220 ms. That is
-  the point where the lanes should move to a Canvas (or WebGL) renderer.
-  `culling.ts`, `rows.ts` and hit testing are already independent of the
-  DOM (hits are resolved against the render blocks, not against SVG nodes),
-  so a Canvas lane renderer would replace only `LaneRow.tsx`.
-- The cost is dominated by React reconciliation and SVG layout of the
-  element list, not by the culling itself, which stays under a millisecond
-  per lane.
+- Up to about 4,000 elements in the lanes a pan renders within one frame.
+  Merging bounds the element count by lane width, not by segment count, so
+  a trace of a few threads stays there at every zoom level: the worst
+  window is the one where segments are about one pixel wide and cannot be
+  merged yet.
+- The bad case is many lanes at that pixel-wide zoom: 16 lanes produced
+  15,565 rects and a pan cost 123 ms. That is the point where the lanes
+  should move to a Canvas (or WebGL) renderer. `culling.ts`, `rows.ts` and
+  hit testing are already independent of the DOM (hits are resolved against
+  the render blocks, not against SVG nodes), so a Canvas lane renderer would
+  replace only `LaneRow.tsx`.
+- The cost is React reconciliation and SVG layout of the element list, not
+  the culling itself, which stays under a millisecond per lane.

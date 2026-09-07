@@ -27,10 +27,12 @@
 
 ### `ext/runtime_visualizer_native` — the collector
 
-Runs inside CRuby's callbacks. Its contract: no Ruby allocation, no Ruby
-API beyond the two thread-specific accessors, no locks, no I/O, bounded
-time. What it does per event is a `clock_gettime`, a serial lookup, a CAS
-to claim a ring slot and a 32-byte store.
+Runs inside CRuby's callbacks. Its contract: no Ruby allocation, no
+locks, no I/O, bounded time, and no Ruby API beyond what each callback
+is allowed: the two thread-specific accessors in the scheduler hooks,
+plus `rb_tracearg_*` and `rb_thread_current` in the GC tracepoint, which
+runs with the GVL. What it does per event is a `clock_gettime`, a serial
+lookup, a CAS to claim a ring slot and a 32-byte store.
 
 | File                    | Responsibility |
 |-------------------------|----------------|

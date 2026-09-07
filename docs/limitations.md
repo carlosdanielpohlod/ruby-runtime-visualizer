@@ -77,7 +77,8 @@ Recorded as they happened; the model handles them:
 - The drain thread, when enabled, is a Ruby thread and appears in the
   trace (identified in the header).
 - A forked child gets a new file; the parent's inherited hook stays
-  registered in the child, disarmed. If the parent is killed with a
+  registered in the child but ignores events (it carries the parent
+  session's generation), and the inherited GC tracepoint is disabled. If the parent is killed with a
   signal the file ends without `thread`, `stats` and `end` records; the
   reader accepts that and reports the trace as incomplete.
 - The line channel embeds source files up to 256 KiB each. Files that

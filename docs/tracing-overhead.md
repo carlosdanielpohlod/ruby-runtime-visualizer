@@ -38,35 +38,42 @@ short hot loop shows a larger relative cost with nearly no events.
 
 Ruby 3.4.8:
 
-| Configuration                          | workload  |        | hot loop |         |
-|----------------------------------------|----------:|-------:|---------:|--------:|
-| untraced                               |  90.07 ms |  1.00x |  7.59 ms |   1.00x |
-| thread hooks only                      |  96.76 ms |  1.07x | 10.43 ms |   1.37x |
-| thread hooks + GC                      |  95.98 ms |  1.07x |  9.10 ms |   1.20x |
-| thread hooks + GC + probes (default)   |  94.97 ms |  1.05x | 10.02 ms |   1.32x |
-| + source lines (`--lines`)             | 2196.5 ms | 24.4x  | 785.9 ms | 103.6x  |
+| Configuration                          | workload  |        | hot loop  |         |
+|----------------------------------------|----------:|-------:|----------:|--------:|
+| untraced                               |  42.85 ms |  1.00x |   4.11 ms |   1.00x |
+| thread hooks only                      |  46.00 ms |  1.07x |   5.31 ms |   1.29x |
+| thread hooks + GC                      |  44.02 ms |  1.03x |   5.03 ms |   1.23x |
+| thread hooks + GC + probes (default)   |  45.52 ms |  1.06x |   5.24 ms |   1.28x |
+| + source lines (`--lines`)             | 3251.0 ms | 75.9x  | 350.90 ms |  85.5x  |
 
 Ruby 3.2.5:
 
-| Configuration                          | workload  |        | hot loop |         |
-|----------------------------------------|----------:|-------:|---------:|--------:|
-| untraced                               |  66.75 ms |  1.00x |  5.11 ms |   1.00x |
-| thread hooks only                      |  65.19 ms |  0.98x |  7.31 ms |   1.43x |
-| thread hooks + GC                      |  62.43 ms |  0.94x |  7.43 ms |   1.45x |
-| thread hooks + GC + probes (default)   |  61.42 ms |  0.92x |  6.61 ms |   1.29x |
-| + source lines (`--lines`)             | 2215.5 ms | 33.2x  | 737.1 ms | 144.3x  |
+| Configuration                          | workload  |        | hot loop  |         |
+|----------------------------------------|----------:|-------:|----------:|--------:|
+| untraced                               |  27.16 ms |  1.00x |   1.91 ms |   1.00x |
+| thread hooks only                      |  29.15 ms |  1.07x |   2.74 ms |   1.43x |
+| thread hooks + GC                      |  27.30 ms |  1.01x |   2.70 ms |   1.41x |
+| thread hooks + GC + probes (default)   |  27.74 ms |  1.02x |   2.69 ms |   1.40x |
+| + source lines (`--lines`)             | 2556.7 ms | 94.2x  | 313.44 ms | 163.8x  |
+
+Event counts for the same runs: the default channels record 40–55 events
+for the workload and 18 for the hot loop; `--lines` records about
+394,000 and 100,000 respectively.
 
 Reading these:
 
-- With the default channels the difference on the 90 ms workload is
-  within run-to-run noise (3.2 even came out faster traced, which is
-  noise, not a speed-up). The fixed session cost of roughly 2–3 ms
-  dominates the small hot-loop numbers.
+- With the default channels the difference on the 40 ms workload is a
+  few percent, within run-to-run noise. The fixed session cost of about
+  a millisecond (open the file, snapshot `Thread.list`, drain, write
+  JSON) dominates the small hot-loop numbers.
 - Source line tracing is a different regime. Two threads counting to
-  50,000 produce 112,000 line events; `examples/cpu_threads.rb` produces
+  50,000 produce 100,000 line events; `examples/cpu_threads.rb` produces
   twenty million and ran 20x slower in an early experiment while
   dropping most of them. The channel exists to answer "where was this
   thread", not to be left on.
+- Absolute times depend on the machine's state; the ratios are what
+  matters, and they move too. An earlier run on the same machine, with
+  the machine busier, measured 24x–144x for the line channel.
 
 ## How the schedule itself changes
 

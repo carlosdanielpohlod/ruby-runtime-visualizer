@@ -18,14 +18,17 @@ $ runtime-visualizer inspect cpu_threads.rvtrace
 
 time         ruby_thread    native    event                  cruby event
     0.000 ms main           304051    tracing_started        -
+    ...
     0.383 ms Thread #2      304051    thread_started         RUBY_INTERNAL_THREAD_EVENT_STARTED
     0.531 ms Thread #2      304051    wants_gvl              RUBY_INTERNAL_THREAD_EVENT_READY
+    ...
     0.607 ms main           304051    gvl_released           RUBY_INTERNAL_THREAD_EVENT_SUSPENDED
     0.733 ms Thread #2      304135    gvl_acquired           RUBY_INTERNAL_THREAD_EVENT_RESUMED
   102.454 ms Thread #2      304135    gvl_released           RUBY_INTERNAL_THREAD_EVENT_SUSPENDED
   102.459 ms Thread #2      304135    wants_gvl              RUBY_INTERNAL_THREAD_EVENT_READY
   102.610 ms Thread #3      304136    gvl_acquired           RUBY_INTERNAL_THREAD_EVENT_RESUMED
   ...
+  (spec/fixtures/cpu_threads.rvtrace, the source column dropped for width)
 ```
 
 ## Requirements
@@ -84,6 +87,7 @@ end
 bundle exec exe/runtime-visualizer inspect out.rvtrace     # event table + per-thread summary
 bundle exec exe/runtime-visualizer stats out.rvtrace       # recorder statistics, dropped events
 bundle exec exe/runtime-visualizer export --perfetto out.rvtrace -o out.json   # for ui.perfetto.dev
+bundle exec exe/runtime-visualizer export --ndjson out.rvtrace -o fixed.rvtrace  # rewrite a truncated file with a tail
 ```
 
 ## The viewer
@@ -130,7 +134,7 @@ guesses. `docs/limitations.md` has the full list.
 
 The scheduler hooks, the GC tracepoint and the probes cost a few percent
 on a thread-heavy workload; within noise on longer ones. Source line
-tracing costs 25x to 140x and changes when timeslices expire. Numbers
+tracing costs roughly 75x to 165x and changes when timeslices expire. Numbers
 and method are in `docs/tracing-overhead.md`, and every trace header
 lists the channels that were on so the reader knows what perturbed it.
 
@@ -157,7 +161,7 @@ built on the scheduler hooks, is in `docs/controlled-execution.md`.
 
 ```
 bundle exec rake compile     # build ext/ into lib/
-bundle exec rake spec        # 89 examples, run on every supported Ruby
+bundle exec rake spec        # run on every supported Ruby, also with RUBY_MN_THREADS=1
 ruby -Ilib benchmarks/overhead.rb
 cd web && npm test
 ```

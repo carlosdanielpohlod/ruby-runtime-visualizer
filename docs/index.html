@@ -414,18 +414,21 @@ footer a:hover { color: var(--ink); text-decoration: underline; }
 
 <span class="c-dim">time         ruby_thread    native    event            cruby event</span>
     0.000 ms main           304051    tracing_started  -
+<span class="c-dim">…</span>
     0.383 ms Thread #2      304051    thread_started   <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_STARTED</span>   <span class="c-dim">← ran on main's native thread</span>
     0.531 ms Thread #2      304051    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
+<span class="c-dim">…</span>
     0.607 ms main           304051    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>
     0.733 ms Thread #2      304135    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>    <span class="c-dim">← its own native thread</span>
   102.454 ms Thread #2      304135    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>  <span class="c-dim">← 100 ms timeslice</span>
   102.459 ms Thread #2      304135    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
   102.610 ms Thread #3      304136    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>
+<span class="c-dim">…</span>
   451.038 ms Thread #2      304135    sleep_enter      <span class="c-cls">Kernel#sleep</span>                          <span class="c-dim">← probe, not the scheduler</span>
   451.045 ms Thread #2      304135    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>
   651.331 ms Thread #2      304135    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
   651.335 ms Thread #2      304135    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>
-<span class="c-dim">…</span>
+<span class="c-dim">… rows elided; the source column is dropped for width. The file is spec/fixtures/cpu_threads.rvtrace.</span>
 <span class="c-dim">threads:</span>
   main           id=1   native=304051   running=0.618 ms
   Thread #2      id=2   native=304135   running=509.605 ms
@@ -612,6 +615,7 @@ footer a:hover { color: var(--ink); text-decoration: underline; }
       <a class="btn small" href="viewer/?trace=../traces/sleep.rvtrace">sleep.rb</a>
       <a class="btn small" href="viewer/?trace=../traces/mutex.rvtrace">mutex.rb</a>
       <a class="btn small" href="viewer/?trace=../traces/cpu_threads_ruby32.rvtrace">cpu_threads.rb on 3.2 (PREEMPTED)</a>
+      <a class="btn small" href="viewer/?trace=../traces/cpu_threads_mn.rvtrace">cpu_threads.rb with RUBY_MN_THREADS=1</a>
       <a class="btn small" href="viewer/">drop your own</a>
     </div>
     <div class="callout" style="border-left-color: var(--blue)">
@@ -666,12 +670,13 @@ footer a:hover { color: var(--ink); text-decoration: underline; }
   <div class="wrap">
     <h2>Instrumentation changes the thing it measures. Here is by how much.</h2>
     <p class="section-lede">
-      Median of five rounds on a four-thread workload, Ruby 3.4.8. The default channels
-      record one event per scheduler transition; the line channel records every Ruby line.
+      Median of five rounds on a four-thread workload, Ruby 3.4.8 and 3.2.5, from
+      <code class="inline">benchmarks/overhead.rb</code>. The default channels record one event
+      per scheduler transition; the line channel records every Ruby line.
     </p>
     <div class="stats">
-      <div class="stat"><b>1.05x</b><span>scheduler hooks + GC + probes, the default</span></div>
-      <div class="stat"><b>24x – 144x</b><span>with <code class="inline">--lines</code>, and it changes when timeslices expire</span></div>
+      <div class="stat"><b>1.02x – 1.07x</b><span>scheduler hooks + GC + probes, the default</span></div>
+      <div class="stat"><b>76x – 164x</b><span>with <code class="inline">--lines</code>, and it changes when timeslices expire</span></div>
       <div class="stat"><b>0</b><span>events lost without a record saying so</span></div>
     </div>
     <div class="callout">

@@ -35,7 +35,7 @@ Each file has exactly one `process_id`.
   "clock": "CLOCK_MONOTONIC",
   "clock_unit": "ns",
   "trace_start_ns": 82736178263812,
-  "scheduler": { "mn_threads": false, "timeslice_ms": 100 },
+  "scheduler": { "mn_threads": false },
   "channels": ["cruby_internal_thread_event", "recorder", "cruby_gc_tracepoint", "probe:sleep"],
   "buffer_capacity": 262144,
   "script": "examples/cpu_threads.rb",
@@ -49,8 +49,10 @@ Each file has exactly one `process_id`.
   clock; readers subtract `trace_start_ns` for display.
 - `channels` lists the instrumentation sources that were enabled. A reader
   can tell "no sleep events" apart from "sleep probe was off".
-- `scheduler.mn_threads` is whether `RUBY_MN_THREADS=1` was set. It is a
-  hint, not an observation; CRuby does not report scheduler mode.
+- `scheduler.mn_threads` is whether `RUBY_MN_THREADS=1` was set, and
+  `scheduler.timeslice_env` is the raw `RUBY_THREAD_TIMESLICE` value when
+  that variable is set. Both are hints from the environment, not
+  observations; CRuby does not report its scheduler mode.
 - `recorder_thread_id` is present when the recorder drained the ring from
   a background Ruby thread. That thread is part of the trace like any
   other; viewers should offer to hide it.
@@ -75,7 +77,7 @@ Each file has exactly one `process_id`.
 
 | Field              | Type            | Meaning |
 |--------------------|-----------------|---------|
-| `sequence`         | integer ≥ 1     | Global order in which the recorder accepted the event. Strictly increasing within a file, no gaps. Ties in `timestamp_ns` are broken by `sequence`. |
+| `sequence`         | integer ≥ 1     | Global order in which the recorder accepted the event. Strictly increasing within a file, no gaps. Readers order events by `sequence`; `timestamp_ns` is the physical time and, across threads, can disagree with that order by a few microseconds (see `docs/architecture.md`). |
 | `timestamp_ns`     | integer         | `CLOCK_MONOTONIC` nanoseconds, read inside the callback before the event was enqueued. |
 | `ruby_thread_id`   | integer         | Serial assigned by the recorder, starting at 1 for the thread that started tracing. `0` means the recorder could not identify the thread (see `stats.threads_unidentified`). |
 | `native_thread_id` | integer         | `gettid()` of the native thread that executed the callback. |
@@ -129,6 +131,9 @@ One per file referenced by a `source_line` event (`metadata.path_id`).
   "drain_count": 1
 }
 ```
+
+`drain_count` counts drains that moved at least one event out of the
+ring; a session without a background drain thread reports 1.
 
 ### `end`
 
@@ -186,7 +191,7 @@ the current state as a no-op.
 
 | `type`        | `native_event`        | metadata |
 |---------------|-----------------------|----------|
-| `sleep_enter` | `Kernel#sleep`        | `requested_ms` (null for `sleep` without argument) |
+| `sleep_enter` | `Kernel#sleep`        | `requested_us` (microseconds; null for `sleep` without argument) |
 | `sleep_exit`  | `Kernel#sleep`        | |
 
 Implemented by prepending a module to `Kernel`; it runs with the GVL.
@@ -199,8 +204,8 @@ Implemented by prepending a module to `Kernel`; it runs with the GVL.
 | `mutex_acquired`  | `Thread::Mutex#lock` | `mutex_id` |
 | `mutex_released`  | `Thread::Mutex#unlock` | `mutex_id` |
 
-`mutex_id` is a small serial assigned by the probe, stable within a trace.
-A `gvl_released` between `mutex_lock_wait` and `mutex_acquired` is
+`mutex_id` is the low 32 bits of the mutex's `object_id`, stable within a
+trace. A `gvl_released` between `mutex_lock_wait` and `mutex_acquired` is
 *derived* to be "waiting for mutex N". CRuby's thread hooks do not say that.
 
 ### Channel `tracepoint:line` (`observed`, high overhead)
@@ -268,8 +273,10 @@ Rules, with precision:
 ## GVL ownership lane
 
 Owner at time *t* is the thread of the latest `gvl_acquired` with
-`timestamp_ns ≤ t` whose thread has not emitted `gvl_released` or
-`thread_exited` since, and which has not been superseded by a later
+`timestamp_ns ≤ t` whose thread has not emitted `gvl_released`,
+`thread_exited` or `wants_gvl` since (a `READY` from the owner is Ruby
+3.2 giving the lock up in `thread_sched_yield`, which fires no
+`SUSPENDED`), and which has not been superseded by a later
 `gvl_acquired`. When no thread qualifies the lane shows `idle`. This is
 `observed` at the endpoints and `derived` for the interval between them.
 

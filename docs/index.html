@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruby Runtime Visualizer — see what CRuby's scheduler actually did</title>
+<meta name="description" content="Records CRuby's own thread and GVL scheduling events and turns them into an interactive timeline. Nothing simulated; every fact says whether it was observed or derived.">
+<meta property="og:title" content="Ruby Runtime Visualizer">
+<meta property="og:description" content="A timeline of real CRuby thread and GVL events, with a lane per thread, a GVL owner lane, a native-thread view and replay.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2312161c'/%3E%3Crect x='2' y='4' width='7' height='3' fill='%2352d273'/%3E%3Crect x='6' y='9' width='8' height='3' fill='%23e0b23a'/%3E%3C/svg%3E">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+
+:root {
+  --bg: #0d1117;
+  --bg-raised: #161b22;
+  --bg-sunken: #010409;
+  --line: #21262d;
+  --line-soft: #1c2128;
+  --ink: #e6edf3;
+  --ink-dim: #9198a1;
+  --ink-faint: #6e7681;
+  --accent: #3fd67a;
+  --accent-deep: #2ea043;
+  --amber: #f2a83b;
+  --red: #ff7b72;
+  --blue: #79c0ff;
+  --violet: #d2a8ff;
+  --shadow: 0 16px 48px -12px rgba(1, 4, 9, .8);
+  --radius: 12px;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-raised: #f6f8fa;
+    --bg-sunken: #0d1117;
+    --line: #d1d9e0;
+    --line-soft: #e4e8ed;
+    --ink: #1f2328;
+    --ink-dim: #59636e;
+    --ink-faint: #818b98;
+    --accent: #1a7f37;
+    --accent-deep: #1a7f37;
+    --amber: #9a6700;
+    --red: #cf222e;
+    --blue: #0550ae;
+    --violet: #8250df;
+    --shadow: 0 12px 36px -14px rgba(31, 35, 40, .28);
+  }
+}
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans);
+  font-size: 17px; line-height: 1.65; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+.wrap { width: min(100% - 2.5rem, 64rem); margin-inline: auto; }
+a { color: var(--blue); }
+
+/* ---------- nav ---------- */
+nav {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px); border-bottom: 1px solid var(--line-soft);
+}
+nav .wrap { display: flex; align-items: center; gap: 1.5rem; height: 3.75rem; }
+.brand {
+  font-family: var(--mono); font-size: .9rem; font-weight: 600; color: var(--ink);
+  text-decoration: none; margin-right: auto; white-space: nowrap;
+}
+.brand span { color: var(--accent); }
+nav a.navlink { color: var(--ink-dim); text-decoration: none; font-size: .875rem; white-space: nowrap; transition: color .15s; }
+nav a.navlink:hover { color: var(--ink); }
+@media (max-width: 44rem) { .nav-hide { display: none; } }
+
+/* ---------- hero ---------- */
+header { padding: clamp(3rem, 9vw, 6rem) 0 clamp(2rem, 5vw, 3.5rem); }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-family: var(--mono); font-size: .75rem; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-dim); border: 1px solid var(--line); border-radius: 999px;
+  padding: .3rem .8rem; margin-bottom: 1.5rem;
+}
+.dot { width: .4rem; height: .4rem; border-radius: 50%; background: var(--accent-deep); }
+h1 { font-size: clamp(2.1rem, 6.2vw, 3.6rem); line-height: 1.08; letter-spacing: -.03em; font-weight: 700; max-width: 22ch; }
+h1 em { font-style: normal; color: var(--accent); }
+.lede { margin-top: 1.35rem; font-size: clamp(1.05rem, 2.4vw, 1.25rem); color: var(--ink-dim); max-width: 60ch; }
+.cta-row { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem; font-size: .925rem; font-weight: 550;
+  text-decoration: none; padding: .625rem 1.15rem; border-radius: 8px;
+  border: 1px solid var(--line); color: var(--ink);
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.btn:hover { border-color: var(--ink-faint); background: var(--bg-raised); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.btn.primary:hover { filter: brightness(1.1); background: var(--accent-deep); }
+
+/* ---------- framed blocks ---------- */
+.term {
+  margin-top: 2.5rem; background: var(--bg-sunken); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.term-bar {
+  display: flex; align-items: center; gap: .45rem; padding: .7rem .9rem;
+  border-bottom: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.02);
+}
+.term-bar i { width: .7rem; height: .7rem; border-radius: 50%; background: #30363d; }
+.term-bar i:nth-child(1) { background: #ff5f57; }
+.term-bar i:nth-child(2) { background: #febc2e; }
+.term-bar i:nth-child(3) { background: #28c840; }
+.term-title { margin-left: .6rem; font-family: var(--mono); font-size: .75rem; color: #6e7681; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.term pre {
+  margin: 0; padding: 1.1rem 1.25rem 1.35rem; overflow-x: auto; font-family: var(--mono);
+  font-size: clamp(.7rem, 1.85vw, .8rem); line-height: 1.75; color: #c9d1d9; tab-size: 2;
+}
+.term pre code { font: inherit; }
+.term svg { display: block; }
+.term-foot { padding: .65rem 1rem; font-family: var(--mono); font-size: .72rem; color: #6e7681; border-top: 1px solid rgba(255,255,255,.07); }
+/* tokens: the terminal stays dark in both themes */
+.c-cmd { color: #e6edf3; }
+.c-cmt { color: #6e7681; }
+.c-kw  { color: #ff7b72; }
+.c-str { color: #a5d6ff; }
+.c-num { color: #79c0ff; }
+.c-cls { color: #79c0ff; }
+.c-mth { color: #d2a8ff; }
+.c-ev  { color: #d2a8ff; }
+.c-run { color: #3fd67a; }
+.c-want { color: #f2a83b; }
+.c-dim { color: #6e7681; }
+.c-mark { color: #f2a83b; font-weight: 600; }
+.c-red { color: #ff7b72; font-weight: 600; }
+
+/* ---------- sections ---------- */
+section { padding: clamp(3rem, 7vw, 5rem) 0; border-top: 1px solid var(--line-soft); }
+h2 { font-size: clamp(1.5rem, 3.6vw, 2.05rem); letter-spacing: -.02em; line-height: 1.2; font-weight: 650; max-width: 26ch; }
+h3 { font-size: 1.05rem; font-weight: 600; letter-spacing: -.01em; margin-bottom: .4rem; }
+.section-lede { margin-top: .9rem; color: var(--ink-dim); max-width: 64ch; }
+.sub { color: var(--ink-dim); }
+p + p { margin-top: 1rem; }
+
+.compare > *, .grid > *, .stats > *, .steps > *, .table-scroll { min-width: 0; }
+.compare { display: grid; gap: 1rem; margin-top: 2rem; grid-template-columns: 1fr; }
+@media (min-width: 46rem) { .compare { grid-template-columns: 1fr 1fr; } }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 1.35rem 1.4rem; background: var(--bg-raised); }
+.card .tag { font-family: var(--mono); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); display: block; margin-bottom: .6rem; }
+.card.bad { border-color: color-mix(in srgb, var(--red) 30%, var(--line)); }
+.card.good { border-color: color-mix(in srgb, var(--accent-deep) 34%, var(--line)); }
+.card.bad .tag { color: var(--red); }
+.card.good .tag { color: var(--accent-deep); }
+.card pre { margin: 0; font-family: var(--mono); font-size: .78rem; line-height: 1.7; overflow-x: auto; color: var(--ink-dim); }
+
+.grid { display: grid; gap: 1rem; margin-top: 2.25rem; grid-template-columns: 1fr; }
+@media (min-width: 40rem) { .grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 60rem) { .grid.three { grid-template-columns: repeat(3, 1fr); } }
+.feat { border: 1px solid var(--line); border-radius: var(--radius); padding: 1.4rem; background: var(--bg-raised); transition: border-color .18s, transform .18s; }
+.feat:hover { border-color: var(--ink-faint); transform: translateY(-2px); }
+.feat .ico { font-family: var(--mono); font-size: 1.05rem; color: var(--accent); display: block; margin-bottom: .7rem; }
+.feat p { font-size: .925rem; color: var(--ink-dim); }
+
+.table-scroll { overflow-x: auto; margin-top: 1.75rem; border: 1px solid var(--line); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: .875rem; min-width: 38rem; }
+th, td { text-align: left; padding: .7rem .95rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+thead th { background: var(--bg-raised); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-dim); }
+tbody tr:last-child td { border-bottom: none; }
+td:first-child { color: var(--ink); }
+td:nth-child(2) { font-family: var(--mono); font-size: .8rem; color: var(--blue); }
+td:last-child { font-family: var(--mono); font-size: .8rem; white-space: nowrap; }
+.p-obs { color: var(--accent); } .p-der { color: var(--amber); } .p-inf { color: var(--ink-faint); }
+
+.steps { counter-reset: s; margin-top: 2rem; display: grid; gap: 1.5rem; max-width: 50rem; }
+.step { counter-increment: s; position: relative; padding-left: 2.9rem; }
+.step::before {
+  content: counter(s); position: absolute; left: 0; top: -.1rem; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  display: grid; place-items: center; font-family: var(--mono); font-size: .8rem; font-weight: 600;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent-deep) 40%, var(--line)); background: var(--bg-raised);
+}
+.step .term { margin-top: .85rem; box-shadow: none; }
+
+.callout {
+  margin-top: 2rem; padding: 1.2rem 1.35rem; border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  border-radius: 0 var(--radius) var(--radius) 0; background: var(--bg-raised); font-size: .93rem; color: var(--ink-dim);
+}
+.callout strong { color: var(--ink); font-weight: 600; }
+.callout + .callout { margin-top: 1rem; }
+.callout .term { margin-top: 1rem; box-shadow: none; }
+
+.stats { display: grid; gap: 1px; margin-top: 2.25rem; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; grid-template-columns: 1fr; }
+@media (min-width: 34rem) { .stats { grid-template-columns: repeat(3, 1fr); } }
+.stat { background: var(--bg-raised); padding: 1.3rem 1.2rem; }
+.stat b { display: block; font-family: var(--mono); font-size: clamp(1.5rem, 4vw, 1.95rem); font-weight: 650; letter-spacing: -.02em; color: var(--ink); line-height: 1.15; }
+.stat span { display: block; margin-top: .3rem; font-size: .83rem; color: var(--ink-dim); }
+
+code.inline { font-family: var(--mono); font-size: .875em; background: var(--bg-raised); border: 1px solid var(--line-soft); padding: .1em .38em; border-radius: 5px; color: var(--ink); word-break: break-word; }
+
+.shot { margin-top: 2rem; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); background: #12161c; }
+.shot img { display: block; width: 100%; height: auto; }
+.demo-row { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.25rem; align-items: center; }
+.demo-row .lbl { font-size: .85rem; color: var(--ink-dim); margin-right: .25rem; }
+.btn.small { font-size: .82rem; padding: .45rem .8rem; font-family: var(--mono); }
+
+.legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-top: 1rem; font-family: var(--mono); font-size: .72rem; color: var(--ink-dim); }
+.legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .35rem; vertical-align: -1px; }
+
+footer { border-top: 1px solid var(--line-soft); padding: 2.5rem 0 3.5rem; }
+.foot-row { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; }
+footer a { color: var(--ink-dim); text-decoration: none; font-size: .875rem; }
+footer a:hover { color: var(--ink); text-decoration: underline; }
+.foot-note { margin-top: 1.25rem; font-size: .8rem; color: var(--ink-faint); max-width: 70ch; }
+
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .feat:hover { transform: none; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top">ruby-runtime-<span>visualizer</span></a>
+    <a class="navlink nav-hide" href="#what">What it shows</a>
+    <a class="navlink nav-hide" href="#provenance">Observed vs derived</a>
+    <a class="navlink nav-hide" href="#versions">3.2 vs 3.3+</a>
+    <a class="navlink nav-hide" href="#viewer">Viewer</a>
+    <a class="navlink" href="viewer/?trace=../traces/cpu_threads.rvtrace">Live demo</a>
+    <a class="navlink" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer">GitHub</a>
+  </div>
+</nav>
+
+<header id="top">
+  <div class="wrap">
+    <div class="eyebrow"><span class="dot"></span> CRuby 3.2 – 4.0 · Linux · native extension + web viewer · MIT</div>
+    <h1>See what CRuby's scheduler <em>actually did</em>.</h1>
+    <p class="lede">
+      A recorder that subscribes to CRuby's own thread instrumentation, so every
+      <em>wants the GVL</em>, <em>acquired</em>, <em>released</em>, <em>started</em> and
+      <em>exited</em> in a trace is the scheduler's transition, timestamped from inside the VM.
+      A viewer that turns it into lanes, a GVL owner track and a replay. Nothing is simulated.
+    </p>
+    <div class="cta-row">
+      <a class="btn primary" href="viewer/?trace=../traces/cpu_threads.rvtrace">Open a trace in the viewer</a>
+      <a class="btn" href="#install">Get started</a>
+      <a class="btn" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer">Source on GitHub</a>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="term-title">examples/cpu_threads.rb · Ruby 3.4.8 · two CPU-bound threads with a sleep in the middle</span></div>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 166" width="100%" role="img" aria-label="Thread and GVL timeline of examples/cpu_threads.rb on Ruby 3.4.8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+<rect width="960" height="166" fill="#0d1117"/>
+<line x1="92.0" x2="92.0" y1="20" y2="166" stroke="#21262d"/>
+<text x="95.0" y="16" fill="#6e7681">0 ms</text>
+<line x1="164.78" x2="164.78" y1="20" y2="166" stroke="#21262d"/>
+<text x="167.78" y="16" fill="#6e7681">100 ms</text>
+<line x1="237.56" x2="237.56" y1="20" y2="166" stroke="#21262d"/>
+<text x="240.56" y="16" fill="#6e7681">200 ms</text>
+<line x1="310.33" x2="310.33" y1="20" y2="166" stroke="#21262d"/>
+<text x="313.33" y="16" fill="#6e7681">300 ms</text>
+<line x1="383.11" x2="383.11" y1="20" y2="166" stroke="#21262d"/>
+<text x="386.11" y="16" fill="#6e7681">400 ms</text>
+<line x1="455.89" x2="455.89" y1="20" y2="166" stroke="#21262d"/>
+<text x="458.89" y="16" fill="#6e7681">500 ms</text>
+<line x1="528.67" x2="528.67" y1="20" y2="166" stroke="#21262d"/>
+<text x="531.67" y="16" fill="#6e7681">600 ms</text>
+<line x1="601.44" x2="601.44" y1="20" y2="166" stroke="#21262d"/>
+<text x="604.44" y="16" fill="#6e7681">700 ms</text>
+<line x1="674.22" x2="674.22" y1="20" y2="166" stroke="#21262d"/>
+<text x="677.22" y="16" fill="#6e7681">800 ms</text>
+<line x1="747.0" x2="747.0" y1="20" y2="166" stroke="#21262d"/>
+<text x="750.0" y="16" fill="#6e7681">900 ms</text>
+<line x1="819.78" x2="819.78" y1="20" y2="166" stroke="#21262d"/>
+<text x="822.78" y="16" fill="#6e7681">1000 ms</text>
+<line x1="892.55" x2="892.55" y1="20" y2="166" stroke="#21262d"/>
+<text x="895.55" y="16" fill="#6e7681">1100 ms</text>
+<rect x="92" y="26" width="860" height="26" fill="#161b22"/>
+<rect x="0" y="26" width="3" height="26" fill="#7cc4ff"/>
+<text x="10" y="42" fill="#e6edf3" font-weight="600">main</text>
+<rect x="92.0" y="29" width="0.8" height="20" fill="#3fd67a"><title>main RUNNING 0.000 ms – 0.109 ms (observed)</title></rect>
+<rect x="92.08" y="29" width="0.8" height="20" fill="#3b4250"><title>main SUSPENDED 0.109 ms – 0.130 ms (observed)</title></rect>
+<rect x="92.09" y="29" width="0.8" height="20" fill="#f2a83b"><title>main WANTS_GVL 0.130 ms – 0.130 ms (observed)</title></rect>
+<rect x="92.09" y="29" width="0.8" height="20" fill="#3fd67a"><title>main RUNNING 0.130 ms – 0.272 ms (observed)</title></rect>
+<rect x="92.2" y="29" width="0.8" height="20" fill="#3b4250"><title>main SUSPENDED 0.272 ms – 0.275 ms (observed)</title></rect>
+<rect x="92.2" y="29" width="0.8" height="20" fill="#f2a83b"><title>main WANTS_GVL 0.275 ms – 0.275 ms (observed)</title></rect>
+<rect x="92.2" y="29" width="0.8" height="20" fill="#3fd67a"><title>main RUNNING 0.275 ms – 0.607 ms (observed)</title></rect>
+<rect x="92.44" y="29" width="812.86" height="20" fill="#3b4250"><title>main SUSPENDED 0.607 ms – 1117.514 ms (observed)</title></rect>
+<text x="96.44" y="43" fill="#0d1117" font-size="10" font-weight="600">SUSPENDED</text>
+<rect x="905.3" y="29" width="46.67" height="20" fill="#f2a83b"><title>main WANTS_GVL 1117.514 ms – 1181.646 ms (observed)</title></rect>
+<rect x="951.97" y="29" width="0.8" height="20" fill="#3fd67a"><title>main RUNNING 1181.646 ms – 1181.680 ms (observed)</title></rect>
+<rect x="92" y="60" width="860" height="26" fill="#161b22"/>
+<rect x="0" y="60" width="3" height="26" fill="#ffb86b"/>
+<text x="10" y="76" fill="#e6edf3" font-weight="600">Thread #2</text>
+<rect x="92.28" y="63" width="0.8" height="20" fill="#4b5563"><title>Thread #2 STARTED 0.383 ms – 0.531 ms (observed)</title></rect>
+<rect x="92.39" y="63" width="0.8" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 0.531 ms – 0.733 ms (observed)</title></rect>
+<rect x="92.53" y="63" width="74.03" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 0.733 ms – 102.454 ms (observed)</title></rect>
+<text x="96.53" y="77" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="166.56" y="63" width="0.8" height="20" fill="#3b4250"><title>Thread #2 SUSPENDED 102.454 ms – 102.459 ms (observed)</title></rect>
+<rect x="166.57" y="63" width="74.18" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 102.459 ms – 204.387 ms (observed)</title></rect>
+<text x="170.57" y="77" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="240.75" y="63" width="73.9" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 204.387 ms – 305.926 ms (observed)</title></rect>
+<text x="244.75" y="77" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="314.65" y="63" width="0.8" height="20" fill="#3b4250"><title>Thread #2 SUSPENDED 305.926 ms – 305.932 ms (observed)</title></rect>
+<rect x="314.65" y="63" width="74.04" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 305.932 ms – 407.671 ms (observed)</title></rect>
+<text x="318.65" y="77" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="388.69" y="63" width="31.57" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 407.671 ms – 451.045 ms (observed)</title></rect>
+<rect x="420.26" y="63" width="145.76" height="20" fill="#4aa8e8" fill-opacity="0.85" stroke="#4aa8e8" stroke-dasharray="3 2"><title>Thread #2 SLEEPING 451.045 ms – 651.331 ms (derived)</title></rect>
+<text x="424.26" y="77" fill="#0d1117" font-size="10" font-weight="600">SLEEPING</text>
+<rect x="566.02" y="63" width="0.8" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 651.331 ms – 651.335 ms (observed)</title></rect>
+<rect x="566.03" y="63" width="111.87" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 651.335 ms – 805.052 ms (observed)</title></rect>
+<text x="570.03" y="77" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="677.9" y="63" width="0.8" height="20" fill="#3b4250"><title>Thread #2 SUSPENDED 805.052 ms – 805.054 ms (observed)</title></rect>
+<rect x="677.9" y="63" width="73.97" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 805.054 ms – 906.691 ms (observed)</title></rect>
+<text x="681.9" y="77" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="751.87" y="63" width="73.84" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 906.691 ms – 1008.149 ms (observed)</title></rect>
+<text x="755.87" y="77" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="825.71" y="63" width="0.8" height="20" fill="#3b4250"><title>Thread #2 SUSPENDED 1008.149 ms – 1008.152 ms (observed)</title></rect>
+<rect x="825.71" y="63" width="73.92" height="20" fill="#f2a83b"><title>Thread #2 WANTS_GVL 1008.152 ms – 1109.723 ms (observed)</title></rect>
+<text x="829.71" y="77" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="899.63" y="63" width="5.67" height="20" fill="#3fd67a"><title>Thread #2 RUNNING 1109.723 ms – 1117.519 ms (observed)</title></rect>
+<rect x="905.3" y="63" width="0.8" height="20" fill="#3b4250"><title>Thread #2 SUSPENDED 1117.519 ms – 1117.521 ms (observed)</title></rect>
+<rect x="92" y="94" width="860" height="26" fill="#161b22"/>
+<rect x="0" y="94" width="3" height="26" fill="#9ff29f"/>
+<text x="10" y="110" fill="#e6edf3" font-weight="600">Thread #3</text>
+<rect x="92.39" y="97" width="0.8" height="20" fill="#4b5563"><title>Thread #3 STARTED 0.539 ms – 0.604 ms (observed)</title></rect>
+<rect x="92.44" y="97" width="74.24" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 0.604 ms – 102.610 ms (observed)</title></rect>
+<text x="96.44" y="111" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="166.68" y="97" width="73.97" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 102.610 ms – 204.247 ms (observed)</title></rect>
+<text x="170.68" y="111" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="240.65" y="97" width="0.8" height="20" fill="#3b4250"><title>Thread #3 SUSPENDED 204.247 ms – 204.254 ms (observed)</title></rect>
+<rect x="240.65" y="97" width="74.27" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 204.254 ms – 306.300 ms (observed)</title></rect>
+<text x="244.65" y="111" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="314.92" y="97" width="73.7" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 306.300 ms – 407.564 ms (observed)</title></rect>
+<text x="318.92" y="111" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="388.62" y="97" width="0.8" height="20" fill="#3b4250"><title>Thread #3 SUSPENDED 407.564 ms – 407.567 ms (observed)</title></rect>
+<rect x="388.62" y="97" width="31.72" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 407.567 ms – 451.160 ms (observed)</title></rect>
+<rect x="420.34" y="97" width="37.91" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 451.160 ms – 503.250 ms (observed)</title></rect>
+<rect x="458.25" y="97" width="145.69" height="20" fill="#4aa8e8" fill-opacity="0.85" stroke="#4aa8e8" stroke-dasharray="3 2"><title>Thread #3 SLEEPING 503.250 ms – 703.432 ms (derived)</title></rect>
+<text x="462.25" y="111" fill="#0d1117" font-size="10" font-weight="600">SLEEPING</text>
+<rect x="603.94" y="97" width="74.04" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 703.432 ms – 805.170 ms (observed)</title></rect>
+<text x="607.94" y="111" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="677.98" y="97" width="73.8" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 805.170 ms – 906.565 ms (observed)</title></rect>
+<text x="681.98" y="111" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="751.78" y="97" width="0.8" height="20" fill="#3b4250"><title>Thread #3 SUSPENDED 906.565 ms – 906.568 ms (observed)</title></rect>
+<rect x="751.78" y="97" width="74.01" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 906.568 ms – 1008.266 ms (observed)</title></rect>
+<text x="755.78" y="111" fill="#0d1117" font-size="10" font-weight="600">WANTS_GVL</text>
+<rect x="825.79" y="97" width="73.8" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 1008.266 ms – 1109.669 ms (observed)</title></rect>
+<text x="829.79" y="111" fill="#0d1117" font-size="10" font-weight="600">RUNNING</text>
+<rect x="899.59" y="97" width="0.8" height="20" fill="#3b4250"><title>Thread #3 SUSPENDED 1109.669 ms – 1109.671 ms (observed)</title></rect>
+<rect x="899.59" y="97" width="5.81" height="20" fill="#f2a83b"><title>Thread #3 WANTS_GVL 1109.671 ms – 1117.650 ms (observed)</title></rect>
+<rect x="905.4" y="97" width="46.54" height="20" fill="#3fd67a"><title>Thread #3 RUNNING 1117.650 ms – 1181.592 ms (observed)</title></rect>
+<rect x="951.94" y="97" width="0.8" height="20" fill="#3b4250"><title>Thread #3 SUSPENDED 1181.592 ms – 1181.595 ms (observed)</title></rect>
+<text x="10" y="144" fill="#e6edf3" font-weight="600">GVL</text>
+<rect x="92" y="128" width="860" height="26" fill="#161b22"/>
+<rect x="92.0" y="131" width="0.8" height="20" fill="#7cc4ff"><title>GVL main 0.000 – 0.109 ms</title></rect>
+<rect x="92.08" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 0.109 – 0.130 ms</title></rect>
+<rect x="92.09" y="131" width="0.8" height="20" fill="#7cc4ff"><title>GVL main 0.130 – 0.272 ms</title></rect>
+<rect x="92.2" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 0.272 – 0.275 ms</title></rect>
+<rect x="92.2" y="131" width="0.8" height="20" fill="#7cc4ff"><title>GVL main 0.275 – 0.607 ms</title></rect>
+<rect x="92.44" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 0.607 – 0.733 ms</title></rect>
+<rect x="92.53" y="131" width="74.03" height="20" fill="#ffb86b"><title>GVL Thread #2 0.733 – 102.454 ms</title></rect>
+<text x="96.53" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #2</text>
+<rect x="166.56" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 102.454 – 102.610 ms</title></rect>
+<rect x="166.68" y="131" width="73.97" height="20" fill="#9ff29f"><title>GVL Thread #3 102.610 – 204.247 ms</title></rect>
+<text x="170.68" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #3</text>
+<rect x="240.65" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 204.247 – 204.387 ms</title></rect>
+<rect x="240.75" y="131" width="73.9" height="20" fill="#ffb86b"><title>GVL Thread #2 204.387 – 305.926 ms</title></rect>
+<text x="244.75" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #2</text>
+<rect x="314.65" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 305.926 – 306.300 ms</title></rect>
+<rect x="314.92" y="131" width="73.7" height="20" fill="#9ff29f"><title>GVL Thread #3 306.300 – 407.564 ms</title></rect>
+<text x="318.92" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #3</text>
+<rect x="388.62" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 407.564 – 407.671 ms</title></rect>
+<rect x="388.69" y="131" width="31.57" height="20" fill="#ffb86b"><title>GVL Thread #2 407.671 – 451.045 ms</title></rect>
+<rect x="420.26" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 451.045 – 451.160 ms</title></rect>
+<rect x="420.34" y="131" width="37.91" height="20" fill="#9ff29f"><title>GVL Thread #3 451.160 – 503.250 ms</title></rect>
+<rect x="458.25" y="131" width="107.78" height="20" fill="#21262d"><title>GVL idle 503.250 – 651.335 ms</title></rect>
+<text x="462.25" y="145" fill="#6e7681" font-size="10" font-weight="600">idle</text>
+<rect x="566.03" y="131" width="111.87" height="20" fill="#ffb86b"><title>GVL Thread #2 651.335 – 805.052 ms</title></rect>
+<text x="570.03" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #2</text>
+<rect x="677.9" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 805.052 – 805.170 ms</title></rect>
+<rect x="677.98" y="131" width="73.8" height="20" fill="#9ff29f"><title>GVL Thread #3 805.170 – 906.565 ms</title></rect>
+<text x="681.98" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #3</text>
+<rect x="751.78" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 906.565 – 906.691 ms</title></rect>
+<rect x="751.87" y="131" width="73.84" height="20" fill="#ffb86b"><title>GVL Thread #2 906.691 – 1008.149 ms</title></rect>
+<text x="755.87" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #2</text>
+<rect x="825.71" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 1008.149 – 1008.266 ms</title></rect>
+<rect x="825.79" y="131" width="73.8" height="20" fill="#9ff29f"><title>GVL Thread #3 1008.266 – 1109.669 ms</title></rect>
+<text x="829.79" y="145" fill="#0d1117" font-size="10" font-weight="600">Thread #3</text>
+<rect x="899.59" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 1109.669 – 1109.723 ms</title></rect>
+<rect x="899.63" y="131" width="5.67" height="20" fill="#ffb86b"><title>GVL Thread #2 1109.723 – 1117.519 ms</title></rect>
+<rect x="905.3" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 1117.519 – 1117.650 ms</title></rect>
+<rect x="905.4" y="131" width="46.54" height="20" fill="#9ff29f"><title>GVL Thread #3 1117.650 – 1181.592 ms</title></rect>
+<rect x="951.94" y="131" width="0.8" height="20" fill="#21262d"><title>GVL idle 1181.592 – 1181.646 ms</title></rect>
+<rect x="951.97" y="131" width="0.8" height="20" fill="#7cc4ff"><title>GVL main 1181.646 – 1181.680 ms</title></rect>
+</svg>
+
+      <div class="term-foot">Drawn from the trace file itself: every block is a scheduler event pair. Hover a block for its timestamps. Dashed blocks are derived (SLEEPING = a release that fell inside a <code>Kernel#sleep</code> probe).</div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#3fd67a"></i>RUNNING (owns the GVL)</span>
+      <span><i style="background:#f2a83b"></i>WANTS_GVL</span>
+      <span><i style="background:#3b4250"></i>SUSPENDED (released, reason unknown)</span>
+      <span><i style="background:#4aa8e8"></i>SLEEPING (derived)</span>
+      <span><i style="background:#d9483b"></i>PREEMPTED (derived, 3.2)</span>
+      <span><i style="background:#a483f0"></i>WAITING_MUTEX (derived)</span>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="term-title">runtime-visualizer inspect cpu_threads.rvtrace</span></div>
+<pre><code><span class="c-cmd">$</span> runtime-visualizer trace examples/cpu_threads.rb
+<span class="c-cmd">$</span> runtime-visualizer inspect cpu_threads.rvtrace
+
+<span class="c-dim">time         ruby_thread    native    event            cruby event</span>
+    0.000 ms main           304051    tracing_started  -
+    0.383 ms Thread #2      304051    thread_started   <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_STARTED</span>   <span class="c-dim">← ran on main's native thread</span>
+    0.531 ms Thread #2      304051    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
+    0.607 ms main           304051    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>
+    0.733 ms Thread #2      304135    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>    <span class="c-dim">← its own native thread</span>
+  102.454 ms Thread #2      304135    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>  <span class="c-dim">← 100 ms timeslice</span>
+  102.459 ms Thread #2      304135    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
+  102.610 ms Thread #3      304136    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>
+  451.038 ms Thread #2      304135    sleep_enter      <span class="c-cls">Kernel#sleep</span>                          <span class="c-dim">← probe, not the scheduler</span>
+  451.045 ms Thread #2      304135    gvl_released     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_SUSPENDED</span>
+  651.331 ms Thread #2      304135    <span class="c-want">wants_gvl</span>        <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_READY</span>
+  651.335 ms Thread #2      304135    <span class="c-run">gvl_acquired</span>     <span class="c-ev">RUBY_INTERNAL_THREAD_EVENT_RESUMED</span>
+<span class="c-dim">…</span>
+<span class="c-dim">threads:</span>
+  main           id=1   native=304051   running=0.618 ms
+  Thread #2      id=2   native=304135   running=509.605 ms
+  Thread #3      id=3   native=304136   running=521.731 ms</code></pre>
+    </div>
+  </div>
+</header>
+
+<section id="what">
+  <div class="wrap">
+    <h2><code class="inline" style="font-size:.75em">Thread#status</code> says "run". This says who held the lock, when, and how you know.</h2>
+    <p class="section-lede">
+      Ruby exposes very little about its scheduler from Ruby. CRuby does expose it from C:
+      since 3.2, <code class="inline">rb_internal_thread_add_event_hook</code> calls you at
+      every transition of the thread scheduler. The recorder lives there.
+    </p>
+    <div class="compare">
+      <div class="card bad">
+        <span class="tag">What you get from Ruby</span>
+<pre>Thread.list.map(&amp;:status)
+# =&gt; ["run", "run", "sleep"]
+
+# "run" means runnable. Two threads
+# say "run"; only one owns the GVL.
+# Which one, since when, and why the
+# other is waiting: not available.</pre>
+      </div>
+      <div class="card good">
+        <span class="tag">What the recorder gets from the VM</span>
+<pre>102.454 ms  T2  SUSPENDED   released the lock
+102.459 ms  T2  READY       wants it back
+102.610 ms  T3  RESUMED     sched-&gt;running == T3
+
+# One event per scheduler transition,
+# CLOCK_MONOTONIC nanoseconds, the
+# native thread that ran the hook.</pre>
+      </div>
+    </div>
+
+    <div class="grid three">
+      <div class="feat">
+        <span class="ico">⟂</span>
+        <h3>Real scheduler events</h3>
+        <p>READY, RESUMED, SUSPENDED, STARTED, EXITED straight from
+        <code class="inline">thread_pthread.c</code>. GC enter and exit from the
+        internal GC tracepoint. No polling, no guessing from timestamps.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">⇄</span>
+        <h3>Ruby thread ≠ native thread</h3>
+        <p>A Ruby thread is a serial; the native thread is an attribute of each event.
+        Under <code class="inline">RUBY_MN_THREADS=1</code> several Ruby threads share one
+        pthread, and the native view shows it.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">◎</span>
+        <h3>Provenance on every event</h3>
+        <p>Each record names its source channel, the CRuby constant behind it and whether
+        the fact was <em>observed</em>, <em>derived</em> or <em>inferred</em>. The viewer shows
+        it, the docs explain it.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">⏸</span>
+        <h3>Reasons, when they are known</h3>
+        <p>The scheduler never says <em>why</em> a thread released the lock. Two probes running
+        with the GVL (<code class="inline">Kernel#sleep</code>, <code class="inline">Mutex#lock</code>)
+        let the model label SLEEPING and WAITING_MUTEX, marked as derived.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">▤</span>
+        <h3>Never silently lossy</h3>
+        <p>Hooks write into a lock-free ring and never block the scheduler. If the ring
+        fills, the trace carries an <code class="inline">events_dropped</code> record with the
+        count, and <code class="inline">stats</code> shows the high-water mark.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">▶</span>
+        <h3>Replay, zoom, inspect</h3>
+        <p>Play the trace at 0.1x–10x, step event by event, zoom from seconds to microseconds,
+        click any block for the technical card, and see source lines per thread when recorded
+        with <code class="inline">--lines</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="provenance">
+  <div class="wrap">
+    <h2>Every fact says how it was obtained.</h2>
+    <p class="section-lede">
+      Technical honesty is the feature. A block on the timeline is either something the VM
+      reported, something computed from those reports by a documented rule, or a guess about
+      the gap before the first event. The three are labelled and drawn differently.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Fact</th><th>Comes from</th><th>Precision</th></tr></thead>
+        <tbody>
+          <tr><td>A thread wants, got or released the GVL</td><td>RUBY_INTERNAL_THREAD_EVENT_READY / RESUMED / SUSPENDED</td><td class="p-obs">observed</td></tr>
+          <tr><td>A thread started or exited</td><td>RUBY_INTERNAL_THREAD_EVENT_STARTED / EXITED</td><td class="p-obs">observed</td></tr>
+          <tr><td>GC started or finished</td><td>RUBY_INTERNAL_EVENT_GC_ENTER / GC_EXIT</td><td class="p-obs">observed</td></tr>
+          <tr><td>A thread called <code class="inline">sleep</code></td><td>probe around Kernel#sleep, with the GVL</td><td class="p-obs">observed (the call)</td></tr>
+          <tr><td>A thread is SLEEPING</td><td>a SUSPENDED interval enclosed by the sleep probe</td><td class="p-der">derived</td></tr>
+          <tr><td>A thread is WAITING_MUTEX</td><td>a SUSPENDED interval enclosed by the mutex probe</td><td class="p-der">derived</td></tr>
+          <tr><td>A thread was PREEMPTED</td><td>another thread's RESUMED while this one had not released (Ruby 3.2)</td><td class="p-der">derived</td></tr>
+          <tr><td>Who owns the GVL between two events</td><td>the last RESUMED not yet followed by SUSPENDED</td><td class="p-der">derived</td></tr>
+          <tr><td>The ractor of a thread</td><td>not in the event; 1 when the process has a single ractor</td><td class="p-der">derived / null</td></tr>
+          <tr><td>A thread's state before its first event</td><td>nothing</td><td class="p-inf">inferred</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <strong>What CRuby does not tell anyone.</strong> Why a thread released the lock
+      (IO, sleep, <code class="inline">Thread.pass</code>, a mutex, a queue, a timeslice, exit
+      all look the same), which ractor it belongs to, and on 3.3+ which native thread a READY
+      was delivered on. The trace carries those gaps as <code class="inline">null</code> and
+      <code class="inline">unknown</code> instead of filling them in.
+    </div>
+  </div>
+</section>
+
+<section id="versions">
+  <div class="wrap">
+    <h2>The same program, three schedulers.</h2>
+    <p class="section-lede">
+      The hooks were read in <code class="inline">thread_pthread.c</code> for 3.2.5, 3.3.0, 3.4.8
+      and 4.0.0 and then checked by recording the same two-thread program on each. The
+      differences are real and the model handles them without hiding them.
+    </p>
+    <div class="grid">
+      <div class="feat">
+        <span class="ico">3.2</span>
+        <h3>No SUSPENDED on a timeslice</h3>
+        <p>When the 100 ms slice expires, the preempted thread reports READY straight from
+        RUNNING while the next one reports RESUMED. The model closes the owner at the other
+        thread's RESUMED and labels the gap PREEMPTED.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">3.2</span>
+        <h3>Two SUSPENDED for one sleep</h3>
+        <p><code class="inline">thread_sched_to_waiting</code> and
+        <code class="inline">native_sleep</code> both fire the hook. Both are recorded;
+        a repeated transition simply does not open a new block.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">3.3+</span>
+        <h3>Callbacks on other threads</h3>
+        <p>STARTED runs on the thread that called <code class="inline">Thread.new</code>; READY
+        runs on whoever woke the thread up. Only RESUMED, SUSPENDED and EXITED are on the
+        thread's own native thread, so only those decide the native view.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">M:N</span>
+        <h3>One pthread, many Ruby threads</h3>
+        <p>With <code class="inline">RUBY_MN_THREADS=1</code> the recorder sees T2 and T3 taking
+        turns on native thread 285098. A native thread id is an attribute of an event, never
+        the identity of a Ruby thread.</p>
+      </div>
+    </div>
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="term-title">RUBY_MN_THREADS=1 ruby 3.4.8 · raw hook events, same program</span></div>
+<pre><code>     0.217 ms  T2  tid=<span class="c-mark">285098</span>  RESUMED
+   101.861 ms  T2  tid=<span class="c-mark">285098</span>  SUSPENDED
+   101.863 ms  T2  tid=<span class="c-mark">285098</span>  READY
+   101.865 ms  T3  tid=<span class="c-mark">285098</span>  RESUMED      <span class="c-dim">← T3 runs on T2's native thread</span>
+   203.674 ms  T3  tid=<span class="c-mark">285098</span>  SUSPENDED
+   203.675 ms  T2  tid=<span class="c-mark">285098</span>  RESUMED</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="viewer">
+  <div class="wrap">
+    <h2>A timeline that reads like a profiler, with a card that reads like the source.</h2>
+    <p class="section-lede">
+      One lane per Ruby thread, a GVL owner lane with <em>idle</em> drawn explicitly, a native
+      threads view, an event list that follows the cursor, and an inspector that names the
+      CRuby event behind whatever you clicked.
+    </p>
+    <div class="shot"><img src="viewer.png" alt="The viewer showing the mutex example: main, Thread #2 and Thread #3 lanes, the GVL lane, and the inspector card for a RUBY_INTERNAL_THREAD_EVENT_SUSPENDED event" loading="lazy"></div>
+    <div class="demo-row">
+      <span class="lbl">Open a real trace:</span>
+      <a class="btn small" href="viewer/?trace=../traces/cpu_threads.rvtrace">cpu_threads.rb</a>
+      <a class="btn small" href="viewer/?trace=../traces/sleep.rvtrace">sleep.rb</a>
+      <a class="btn small" href="viewer/?trace=../traces/mutex.rvtrace">mutex.rb</a>
+      <a class="btn small" href="viewer/?trace=../traces/cpu_threads_ruby32.rvtrace">cpu_threads.rb on 3.2 (PREEMPTED)</a>
+      <a class="btn small" href="viewer/">drop your own</a>
+    </div>
+    <div class="callout" style="border-left-color: var(--blue)">
+      <strong>TRACE MODE.</strong> Program scheduling was not intentionally controlled by
+      Runtime Visualizer. Instrumentation overhead still exists. A debugger-like controlled
+      mode (pause, step) is a different feature with different guarantees; the design for
+      it, and why it must not be built on the scheduler hooks, is in
+      <a href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/controlled-execution.md">docs/controlled-execution.md</a>.
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>From clone to timeline.</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Build the extension</h3>
+        <div class="term">
+<pre><code><span class="c-cmd">$</span> git clone https://github.com/carlosdanielpohlod/ruby-runtime-visualizer
+<span class="c-cmd">$</span> cd ruby-runtime-visualizer &amp;&amp; bundle install &amp;&amp; bundle exec rake compile</code></pre>
+        </div>
+        <p class="sub" style="font-size:.9rem;margin-top:.6rem">CRuby 3.2 or newer on Linux. JRuby, TruffleRuby and Windows have no thread hooks to subscribe to.</p>
+      </div>
+      <div class="step">
+        <h3>Record a script, or a block</h3>
+        <div class="term">
+<pre><code><span class="c-cmd">$</span> bundle exec exe/runtime-visualizer trace your_script.rb
+<span class="c-cmd">$</span> bundle exec exe/runtime-visualizer trace --lines your_script.rb   <span class="c-cmt"># + source lines, high overhead</span>
+
+<span class="c-cmt"># or from Ruby</span>
+<span class="c-kw">require</span> <span class="c-str">"runtime_visualizer"</span>
+<span class="c-cls">RuntimeVisualizer</span>.<span class="c-mth">trace</span>(<span class="c-str">"out.rvtrace"</span>) <span class="c-kw">do</span>
+  <span class="c-num">2</span>.times.map { <span class="c-cls">Thread</span>.new { work } }.each(&amp;:join)
+<span class="c-kw">end</span></code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <h3>Read it</h3>
+        <div class="term">
+<pre><code><span class="c-cmd">$</span> bundle exec exe/runtime-visualizer inspect out.rvtrace                    <span class="c-cmt"># table + per-thread summary</span>
+<span class="c-cmd">$</span> bundle exec exe/runtime-visualizer stats out.rvtrace                      <span class="c-cmt"># dropped events, buffer high water</span>
+<span class="c-cmd">$</span> bundle exec exe/runtime-visualizer export --perfetto out.rvtrace -o out.json   <span class="c-cmt"># ui.perfetto.dev</span>
+<span class="c-cmd">$</span> cd web &amp;&amp; npm install &amp;&amp; npm run dev                                       <span class="c-cmt"># then drop out.rvtrace on the page</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="overhead">
+  <div class="wrap">
+    <h2>Instrumentation changes the thing it measures. Here is by how much.</h2>
+    <p class="section-lede">
+      Median of five rounds on a four-thread workload, Ruby 3.4.8. The default channels
+      record one event per scheduler transition; the line channel records every Ruby line.
+    </p>
+    <div class="stats">
+      <div class="stat"><b>1.05x</b><span>scheduler hooks + GC + probes, the default</span></div>
+      <div class="stat"><b>24x – 144x</b><span>with <code class="inline">--lines</code>, and it changes when timeslices expire</span></div>
+      <div class="stat"><b>0</b><span>events lost without a record saying so</span></div>
+    </div>
+    <div class="callout">
+      <strong>Inside the hook, the work is bounded:</strong> a vDSO clock read, a serial lookup,
+      one compare-and-swap and a 32-byte store, while CRuby already holds the scheduler lock.
+      No Ruby calls, no allocation, no I/O. The full method and the 3.2 numbers are in
+      <a href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/tracing-overhead.md">docs/tracing-overhead.md</a>.
+    </div>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="wrap">
+    <h2>Written to be read, including the C.</h2>
+    <p class="section-lede">
+      The extension explains, at each callback, which lock the caller holds and why it cannot
+      call into Ruby. The docs record what was verified and how.
+    </p>
+    <div class="grid three">
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/research.md"><span class="ico">01</span><h3>research.md</h3><p>Where each event fires per version, the raw dumps, and the decisions that followed.</p></a>
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/event-protocol.md"><span class="ico">02</span><h3>event-protocol.md</h3><p>The .rvtrace format, event types, the state model and the GVL lane rules.</p></a>
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/cruby-hooks.md"><span class="ico">03</span><h3>cruby-hooks.md</h3><p>The APIs used, their stability, and the safety rules the recorder follows.</p></a>
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/architecture.md"><span class="ico">04</span><h3>architecture.md</h3><p>Ring buffer, identity, drain, protocol, exporters, viewer, and why each is where it is.</p></a>
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/limitations.md"><span class="ico">05</span><h3>limitations.md</h3><p>What cannot be seen, what looks odd but is real, and what is not built.</p></a>
+      <a class="feat" style="text-decoration:none;color:inherit" href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/docs/controlled-execution.md"><span class="ico">06</span><h3>controlled-execution.md</h3><p>How pause/step could work without blocking inside a scheduler hook, and the deadlocks to avoid.</p></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <a href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer">GitHub</a>
+      <a href="viewer/">Viewer</a>
+      <a href="https://github.com/carlosdanielpohlod/ruby-runtime-visualizer/blob/main/LICENSE">MIT license</a>
+      <a href="https://github.com/carlosdanielpohlod">carlosdanielpohlod</a>
+    </div>
+    <p class="foot-note">
+      The instrumentation approach follows the ground laid by Ivo Anjo's
+      <a href="https://github.com/ivoanjo/gvl-tracing">gvl-tracing</a>, which first showed how
+      to observe the GVL through these hooks. This project uses the same CRuby mechanisms with
+      a lock-free ring instead of writing from the callback, a versioned protocol with
+      provenance, and an interactive viewer.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

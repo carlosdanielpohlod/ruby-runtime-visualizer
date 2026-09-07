@@ -46,6 +46,11 @@ Recorded as they happened; the model handles them:
 - A `READY` immediately followed by `RESUMED` on the same thread means
   the ready queue was empty; the WANTS_GVL segment has zero or near-zero
   length.
+- Ruby 3.2 `Thread.pass` (and a timeslice with nobody else ready) emits
+  `READY` then `RESUMED` on the running thread with no `SUSPENDED` in
+  between: `thread_sched_yield` drops `sched->running` without a hook.
+  The model treats a `READY` from the current owner as giving the lock
+  up, so the GVL lane shows a short idle gap.
 - Two hooks on different cores may claim ring slots in the opposite order
   of their timestamps, so consecutive sequence numbers can carry
   timestamps a few microseconds out of order. Per thread the order is

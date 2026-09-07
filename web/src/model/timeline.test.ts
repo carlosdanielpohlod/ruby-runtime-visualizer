@@ -196,6 +196,26 @@ describe("thread state model invariants", () => {
     expect(timeline.violations).toEqual([]);
   });
 
+  it("frees the lock when the owner reports READY without a SUSPENDED (Ruby 3.2 yield)", () => {
+    const trace = parseTrace(
+      [
+        '{"record":"header","trace_start_ns":0}',
+        '{"record":"event","sequence":1,"timestamp_ns":0,"ruby_thread_id":1,"type":"tracing_started","source":"recorder"}',
+        '{"record":"event","sequence":2,"timestamp_ns":10,"ruby_thread_id":1,"type":"wants_gvl","source":"cruby_internal_thread_event","native_event":"RUBY_INTERNAL_THREAD_EVENT_READY"}',
+        '{"record":"event","sequence":3,"timestamp_ns":12,"ruby_thread_id":1,"type":"gvl_acquired","source":"cruby_internal_thread_event","native_event":"RUBY_INTERNAL_THREAD_EVENT_RESUMED"}',
+        '{"record":"end","trace_end_ns":22}',
+      ].join("\n"),
+    );
+    const timeline = buildTimeline(trace);
+    expect(timeline.threadSegments.get(1)?.map((s) => s.state)).toEqual(["RUNNING", "WANTS_GVL", "RUNNING"]);
+    expect(timeline.gvlSegments.map((g) => [g.owner, g.startNs, g.endNs])).toEqual([
+      [1, 0, 10],
+      [null, 10, 12],
+      [1, 12, 22],
+    ]);
+    expect(timeline.violations).toEqual([]);
+  });
+
   it("reports a gvl_acquired by the current owner as a violation", () => {
     const trace = parseTrace(
       [

@@ -192,7 +192,10 @@ export function buildTimeline(trace: Trace): Timeline {
       gvlOwner = id;
       gvlSince = event.timestamp_ns;
       gvlSequence = event.sequence;
-    } else if (event.type === "gvl_released" || event.type === "thread_exited") {
+    } else if (event.type === "gvl_released" || event.type === "thread_exited" || event.type === "wants_gvl") {
+      // A READY from the current owner means it gave the lock up without a
+      // SUSPENDED: Ruby 3.2 yields (Thread.pass, timeslice with nobody else
+      // ready) look like this. The lock is free until the next RESUMED.
       if (gvlOwner === id) {
         closeGvl(event.timestamp_ns);
         gvlOwner = null;

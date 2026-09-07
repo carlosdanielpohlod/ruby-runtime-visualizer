@@ -55,6 +55,15 @@ RSpec.describe RuntimeVisualizer::Timeline do
       ])
     end
 
+    it "frees the lock when the owner reports READY without a SUSPENDED (3.2 yield)" do
+      tl = described_class.new(synthetic([
+        [1, "tracing_started", 0], [1, "wants_gvl", 10], [1, "gvl_acquired", 12]
+      ]))
+      expect(states(tl, 1).map(&:first)).to eq(%w[RUNNING WANTS_GVL RUNNING])
+      expect(tl.gvl_segments.map { |s| [s.owner, s.start_ns, s.end_ns] }).to eq([[1, 0, 10], [nil, 10, 12], [1, 12, 22]])
+      expect(tl.violations).to be_empty
+    end
+
     it "infers the state of a thread that was alive before tracing" do
       tl = described_class.new(synthetic([[1, "tracing_started", 0], [2, "gvl_released", 10], [3, "wants_gvl", 12]]))
       expect(states(tl, 2).first).to eq(["RUNNING", 0, 10, "inferred"])

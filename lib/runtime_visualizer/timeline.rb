@@ -100,7 +100,10 @@ module RuntimeVisualizer
           close_gvl(gvl_owner, gvl_since, event.timestamp_ns)
           gvl_owner = id
           gvl_since = event.timestamp_ns
-        when "gvl_released", "thread_exited"
+        when "gvl_released", "thread_exited", "wants_gvl"
+          # A READY from the current owner means it gave the lock up without a
+          # SUSPENDED: Ruby 3.2 yields (Thread.pass, a timeslice with nobody
+          # else ready) look like this. The lock is free until the next RESUMED.
           if gvl_owner == id
             close_gvl(gvl_owner, gvl_since, event.timestamp_ns)
             gvl_owner = nil

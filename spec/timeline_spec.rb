@@ -95,7 +95,7 @@ RSpec.describe RuntimeVisualizer::Timeline do
   end
 
   describe "invariants on real traces" do
-    %w[cpu_threads.rvtrace sleep.rvtrace mutex.rvtrace cpu_threads_ruby32.rvtrace sleep_ruby32.rvtrace].each do |name|
+    %w[cpu_threads.rvtrace sleep.rvtrace mutex.rvtrace cpu_threads_ruby32.rvtrace sleep_ruby32.rvtrace cpu_threads_mn.rvtrace].each do |name|
       context name do
         let(:trace) { fixture(name) }
         let(:timeline) { described_class.new(trace) }
@@ -136,6 +136,15 @@ RSpec.describe RuntimeVisualizer::Timeline do
       waiting = described_class.new(fixture("mutex.rvtrace")).thread_segments.values.flatten.select { |s| s.state == Timeline::WAITING_MUTEX }
       expect(waiting.size).to eq(1)
       expect(waiting.first.duration_ns).to be > 150_000_000
+    end
+
+    it "sees two Ruby threads sharing one native thread under M:N scheduling" do
+      trace = fixture("cpu_threads_mn.rvtrace")
+      expect(trace.header.dig("scheduler", "mn_threads")).to be(true)
+      by_native = trace.events.select { |e| e.type == "gvl_acquired" }.group_by(&:native_thread_id).transform_values { |es| es.map(&:ruby_thread_id).uniq }
+      shared = by_native.values.find { |ids| ids.size > 1 }
+      expect(shared).not_to be_nil
+      shared.each { |id| expect(trace.thread(id).native_thread_ids).to eq([by_native.key(shared)]) }
     end
 
     it "sees timeslice preemptions on Ruby 3.2" do

@@ -25,6 +25,16 @@ RSpec.describe RuntimeVisualizer::Trace do
     expect(truncated.end_ns).to eq(truncated.events.last.timestamp_ns)
   end
 
+  it "keeps events of a type it does not know without breaking the model" do
+    lines = File.readlines(File.join(TraceHelpers::FIXTURES, "sleep.rvtrace"))
+    future = %({"record":"event","sequence":9999,"timestamp_ns":#{trace.trace_start_ns + 5},"ruby_thread_id":1,"native_thread_id":1,"ractor_id":1,"type":"fiber_switched","source":"cruby_fiber","precision":"observed"})
+    parsed = described_class.parse(StringIO.new((lines + [future]).join))
+    event = parsed.events.find { |e| e.type == "fiber_switched" }
+    expect(event.scheduler?).to be(false)
+    expect(event.probe?).to be(false)
+    expect { RuntimeVisualizer::Timeline.new(parsed) }.not_to raise_error
+  end
+
   it "ignores records it does not know" do
     parsed = described_class.parse(StringIO.new(%({"record":"header","trace_start_ns":1}\n{"record":"future","x":1}\n)))
     expect(parsed.events).to be_empty

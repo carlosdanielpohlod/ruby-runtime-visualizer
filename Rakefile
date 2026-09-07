@@ -33,3 +33,36 @@ RSpec::Core::RakeTask.new(:spec)
 task spec: :compile
 
 task default: :spec
+
+namespace :web do
+  WEB_FIXTURES = FileList["web/src/__fixtures__/*.rvtrace"]
+
+  desc "Regenerate web/src/__fixtures__/expected/*.json from the Ruby reference model"
+  task expected: :compile do
+    require "json"
+    $LOAD_PATH.unshift(File.expand_path("lib", __dir__))
+    require "runtime_visualizer"
+
+    WEB_FIXTURES.each do |path|
+      trace = RuntimeVisualizer::Trace.load(path)
+      timeline = RuntimeVisualizer::Timeline.new(trace)
+      expected = {
+        "threads" => timeline.ruby_thread_ids.to_h do |id|
+          [id.to_s, timeline.thread_segments[id].map do |s|
+            { "state" => s.state, "start_ns" => s.start_ns, "end_ns" => s.end_ns,
+              "precision" => s.precision, "native_event" => s.native_event, "sequence" => s.sequence }
+          end]
+        end,
+        "gvl" => timeline.gvl_segments.map do |g|
+          { "owner" => g.owner, "start_ns" => g.start_ns, "end_ns" => g.end_ns, "precision" => g.precision }
+        end,
+        "violations" => timeline.violations.map do |v|
+          { "sequence" => v.sequence, "rubyThreadId" => v.ruby_thread_id, "message" => v.message }
+        end
+      }
+      target = "web/src/__fixtures__/expected/#{File.basename(path, '.rvtrace')}.json"
+      File.write(target, "#{JSON.pretty_generate(expected)}\n")
+      puts "wrote #{target}"
+    end
+  end
+end

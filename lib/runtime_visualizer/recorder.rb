@@ -58,12 +58,13 @@ module RuntimeVisualizer
       raise ArgumentError, "a recorder is already active in this process" if self.class.current
 
       @writer = TraceWriter.open(output)
+      # Threads alive now get their serial before any hook can race for it.
+      @threads.snapshot
       Native.start(options[:buffer_capacity], options[:gc_events] ? Native::OPT_GC_EVENTS : 0)
       @active = true
       self.class.instance_variable_set(:@current, self)
       ForkGuard.install
 
-      @threads.snapshot
       @drain_lock.synchronize do
         start_drain_thread if options[:drain_interval]
         @writer.header(header_fields)
@@ -75,13 +76,15 @@ module RuntimeVisualizer
     end
 
     # Moves everything the ring holds into the file. Safe to call from any
-    # thread; the recorder's own Ruby code is kept out of the line channel
-    # while it runs so a trace does not fill up with the tracer tracing itself.
+    # thread; the probes are muted on the calling thread while it runs so a
+    # trace does not fill up with the tracer tracing itself.
     def drain
-      @drain_lock.synchronize do
-        paused { drain_ring }
-        @threads.snapshot
-        @writer.flush
+      Probes.silence do
+        @drain_lock.synchronize do
+          drain_ring
+          @threads.snapshot
+          @writer.flush
+        end
       end
     end
 
@@ -105,7 +108,7 @@ module RuntimeVisualizer
     # Runs the block (the actual fork) while no drain is in progress, so the
     # child never inherits a half-written batch in the file's write buffer.
     def around_fork(&block)
-      @drain_lock.synchronize(&block)
+      Probes.silence { @drain_lock.synchronize(&block) }
     end
 
     # In the child after fork: the inherited hooks are neutralised by the
@@ -138,10 +141,6 @@ module RuntimeVisualizer
       end
     end
 
-    def paused(&block)
-      @source_lines ? @source_lines.paused(&block) : yield
-    end
-
     # The drain thread is never killed: a kill in the middle of a batch would
     # lose events that were already taken out of the ring. It is asked to
     # stop, woken up, and joined.
@@ -151,9 +150,11 @@ module RuntimeVisualizer
       @drain_thread = Thread.new do
         # On 3.2 a thread's serial can only be read from the thread itself.
         serial << Native.current_thread_serial
-        until @drain_thread_stop
-          sleep options[:drain_interval]
-          drain unless @drain_thread_stop
+        Probes.silence do
+          until @drain_thread_stop
+            sleep options[:drain_interval]
+            drain unless @drain_thread_stop
+          end
         end
       end
       @drain_thread.name = DRAIN_THREAD_NAME

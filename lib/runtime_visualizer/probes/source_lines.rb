@@ -38,13 +38,6 @@ module RuntimeVisualizer
       def enable = @tracepoint.enable
       def disable = @tracepoint.disable
 
-      # Runs the block with line tracing switched off on the calling thread's
-      # behalf, so the recorder's own work does not appear in the trace.
-      def paused(&block)
-        return yield unless @tracepoint.enabled?
-
-        @tracepoint.disable(&block)
-      end
 
       def source_files
         @paths.map do |path, id|
@@ -55,7 +48,7 @@ module RuntimeVisualizer
       private
 
       def record(tp)
-        return if @ignored_threads.include?(Thread.current)
+        return if @ignored_threads.include?(Thread.current) || Probes.silenced?
 
         path = tp.path
         return if path.start_with?("<internal:") || @ignore.any? { |dir| path.start_with?(dir) }

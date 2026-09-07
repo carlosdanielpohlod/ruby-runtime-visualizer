@@ -28,7 +28,7 @@ module RuntimeVisualizer
       )
     end
 
-    def definition = EventTypes::BY_TYPE.fetch(type)
+    def definition = EventTypes.definition(type)
     def scheduler? = definition.scheduler?
     def gc? = definition.gc?
     def probe? = definition.probe?

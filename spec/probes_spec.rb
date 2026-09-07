@@ -6,7 +6,7 @@ RSpec.describe "probes" do
       trace = record(probes: [:sleep]) { sleep 0.01 }
       enter = trace.events.find { |e| e.type == "sleep_enter" }
       exit = trace.events.find { |e| e.type == "sleep_exit" }
-      expect(enter.metadata["requested_ms"]).to eq(10)
+      expect(enter.metadata["requested_us"]).to eq(10_000)
       expect(enter.native_event).to eq("Kernel#sleep")
       expect(enter.source).to eq("probe")
       expect(exit.timestamp_ns - enter.timestamp_ns).to be >= 10_000_000
@@ -20,7 +20,22 @@ RSpec.describe "probes" do
         t.join
       end
       enter = trace.events.find { |e| e.type == "sleep_enter" }
-      expect(enter.metadata["requested_ms"]).to be_nil
+      expect(enter.metadata["requested_us"]).to be_nil
+    end
+
+    it "keeps a sub-millisecond sleep distinguishable from an open-ended one" do
+      trace = record(probes: [:sleep]) { sleep 0.0002 }
+      expect(trace.events.find { |e| e.type == "sleep_enter" }.metadata["requested_us"]).to eq(200)
+    end
+
+    it "is muted inside Probes.silence on that thread only" do
+      trace = record(probes: [:sleep]) do
+        other = Thread.new { sleep 0.001 }
+        RuntimeVisualizer::Probes.silence { sleep 0.001 }
+        other.join
+      end
+      expect(trace.events.count { |e| e.type == "sleep_enter" }).to eq(1)
+      expect(trace.events.find { |e| e.type == "sleep_enter" }.ruby_thread_id).not_to eq(1)
     end
 
     it "leaves Kernel#sleep's return value alone" do

@@ -38,12 +38,12 @@ RSpec.describe RuntimeVisualizer::CLI do
     end
   end
 
-  it "keeps the trace when the script calls exit" do
+  it "keeps the trace and the exit status when the script calls exit" do
     Dir.mktmpdir do |dir|
       script = File.join(dir, "exits.rb")
       File.write(script, "exit 3\n")
       output = File.join(dir, "exits.rvtrace")
-      expect(run("trace", "-o", output, script)).to eq(0)
+      expect(run("trace", "-o", output, script)).to eq(3)
       expect(RuntimeVisualizer::Trace.load(output).complete?).to be(true)
     end
   end

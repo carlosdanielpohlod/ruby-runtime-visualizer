@@ -2,6 +2,20 @@
 
 module RuntimeVisualizer
   module Probes
+    SILENCED_KEY = :runtime_visualizer_probes_silenced
+
+    # Runs the block with every probe muted on the calling thread, so the
+    # recorder's own locks and sleeps do not show up in the trace.
+    def self.silence
+      previous = Thread.current[SILENCED_KEY]
+      Thread.current[SILENCED_KEY] = true
+      yield
+    ensure
+      Thread.current[SILENCED_KEY] = previous
+    end
+
+    def self.silenced? = Thread.current[SILENCED_KEY] == true
+
     # Observes calls to Kernel#sleep from Ruby, with the GVL held.
     #
     # CRuby's thread hooks report that a thread released the GVL, not why.
@@ -22,9 +36,9 @@ module RuntimeVisualizer
         private
 
         def sleep(*args)
-          return super unless Probes::Sleep.enabled?
+          return super unless Probes::Sleep.enabled? && !Probes.silenced?
 
-          Native.mark(Probes::Sleep::ENTER, Probes::Sleep.requested_ms(args.first), 0)
+          Native.mark(Probes::Sleep::ENTER, Probes::Sleep.requested_us(args.first), 0)
           begin
             super
           ensure
@@ -39,10 +53,12 @@ module RuntimeVisualizer
       class << self
         def enabled? = @enabled
 
-        def requested_ms(duration)
+        # Microseconds fit 32 bits up to 71 minutes and keep sub-millisecond
+        # sleeps distinguishable from `sleep` with no argument (0).
+        def requested_us(duration)
           return 0 unless duration.is_a?(Numeric)
 
-          (duration * 1000).round.clamp(0, MAX_ARG)
+          (duration * 1_000_000).round.clamp(1, MAX_ARG)
         end
 
         def install

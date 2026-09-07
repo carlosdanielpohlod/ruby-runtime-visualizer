@@ -57,7 +57,13 @@ module RuntimeVisualizer
       40 => :SOURCE_LINE
     }.freeze
 
-    def self.code(name) = NATIVE_NAMES.key(name) or raise ArgumentError, "unknown event #{name}"
+    # An event type this version does not know. Readers keep it, treat it as
+    # belonging to no channel, and show it as-is.
+    UNKNOWN = Definition.new(0, "unknown", nil, "unknown", "unknown").freeze
+
+    def self.code(name) = NATIVE_NAMES.key(name) || raise(ArgumentError, "unknown event #{name}")
+
+    def self.definition(type) = BY_TYPE.fetch(type, UNKNOWN)
 
     def self.verify_against_native!(native_types)
       NATIVE_NAMES.each do |code, name|

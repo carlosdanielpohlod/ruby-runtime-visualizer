@@ -23,7 +23,7 @@ module RuntimeVisualizer
 
       module MutexExtension
         def lock
-          return super unless Probes::Mutex.enabled?
+          return super unless Probes::Mutex.active?
 
           id = Probes::Mutex.id_of(self)
           Native.mark(Probes::Mutex::LOCK_WAIT, id, 0)
@@ -34,18 +34,18 @@ module RuntimeVisualizer
 
         def try_lock
           acquired = super
-          Native.mark(Probes::Mutex::ACQUIRED, Probes::Mutex.id_of(self), 0) if acquired && Probes::Mutex.enabled?
+          Native.mark(Probes::Mutex::ACQUIRED, Probes::Mutex.id_of(self), 0) if acquired && Probes::Mutex.active?
           acquired
         end
 
         def unlock
           result = super
-          Native.mark(Probes::Mutex::RELEASED, Probes::Mutex.id_of(self), 0) if Probes::Mutex.enabled?
+          Native.mark(Probes::Mutex::RELEASED, Probes::Mutex.id_of(self), 0) if Probes::Mutex.active?
           result
         end
 
         def synchronize
-          return super unless Probes::Mutex.enabled?
+          return super unless Probes::Mutex.active?
 
           lock
           begin
@@ -61,6 +61,7 @@ module RuntimeVisualizer
 
       class << self
         def enabled? = @enabled
+        def active? = @enabled && !Probes.silenced?
 
         # object_id is a small, process-unique integer in CRuby; the low 32
         # bits travel through the native event and readers map them back to

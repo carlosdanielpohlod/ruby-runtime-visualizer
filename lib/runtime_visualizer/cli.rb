@@ -18,6 +18,7 @@ module RuntimeVisualizer
         inspect TRACE                      print the events of a trace as a table
         stats TRACE                        print recorder statistics of a trace
         export --perfetto TRACE            convert a trace to Perfetto/Chrome JSON
+        export --ndjson TRACE              rewrite a trace with a complete tail
 
       Run `runtime-visualizer <command> --help` for the options of a command.
     TEXT
@@ -68,11 +69,13 @@ module RuntimeVisualizer
       return usage_error(parser) unless script
 
       output = options.delete(:output) || default_output_for(script)
-      run_script(script, script_args, output, options)
+      status = run_script(script, script_args, output, options)
       @err.puts("trace written to #{output}")
-      0
+      status
     end
 
+    # Runs the script in this process and returns the exit status it would
+    # have had. The trace is finished either way.
     def run_script(script, script_args, output, options)
       path = File.expand_path(script)
       recorder = Recorder.new(output, script: script, **options)
@@ -81,8 +84,9 @@ module RuntimeVisualizer
         ARGV.replace(script_args)
         $0 = path
         load(path)
-      rescue SystemExit
-        # the script called exit; the trace is still worth keeping
+        0
+      rescue SystemExit => e
+        e.status
       ensure
         recorder.stop
       end
@@ -155,10 +159,13 @@ module RuntimeVisualizer
 
     def load_trace(argv)
       path = argv.first
-      return usage_error(nil, "trace file required") && nil unless path
-      return (@err.puts("no such file: #{path}") && nil) unless File.exist?(path)
-
-      Trace.load(path)
+      if path.nil?
+        @err.puts("trace file required")
+      elsif !File.exist?(path)
+        @err.puts("no such file: #{path}")
+      else
+        Trace.load(path)
+      end
     end
 
     def default_output_for(script) = "#{File.basename(script, '.rb')}.rvtrace"

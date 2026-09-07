@@ -23,8 +23,7 @@ module RuntimeVisualizer
       end
     end
 
-    def initialize(source_lines: nil)
-      @source_lines = source_lines
+    def initialize
       @roles = EventTypes::DEFINITIONS.to_h { |d| [d.code, self.class.native_thread_role(d)] }
     end
 
@@ -59,7 +58,7 @@ module RuntimeVisualizer
       meta = { "native_thread_role" => @roles.fetch(definition.code) }
       case definition.type
       when "events_dropped", "threads_unidentified" then meta["count"] = arg0
-      when "sleep_enter" then meta["requested_ms"] = arg0.zero? ? nil : arg0
+      when "sleep_enter" then meta["requested_us"] = arg0.zero? ? nil : arg0
       when "mutex_lock_wait", "mutex_acquired", "mutex_released" then meta["mutex_id"] = arg0
       when "source_line"
         meta["path_id"] = arg0

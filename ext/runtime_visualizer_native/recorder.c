@@ -19,6 +19,14 @@ typedef struct {
      */
     _Atomic bool active;
 
+    /*
+     * Which registration the hooks belong to. A forked child inherits the
+     * parent's hook and tracepoint registrations and cannot safely remove
+     * the hook, so every callback carries the generation it was registered
+     * with and ignores events once the recorder has moved on.
+     */
+    uintptr_t generation;
+
     _Atomic uint64_t threads_unidentified;
 
     uint64_t started_at_ns;
@@ -75,9 +83,14 @@ static uint16_t event_type_for(rb_event_flag_t event)
  * here may block, allocate through Ruby, raise, or touch Ruby objects other
  * than reading event_data->thread's specific slot.
  */
+static bool current_generation_p(void *user_data)
+{
+    return (uintptr_t)user_data == recorder.generation;
+}
+
 static void on_thread_event(rb_event_flag_t event, const rb_internal_thread_event_data_t *event_data, void *user_data)
 {
-    (void)user_data;
+    if (!current_generation_p(user_data)) return;
     if (!atomic_load_explicit(&recorder.active, memory_order_acquire)) return;
 
     rv_event ev = {
@@ -97,7 +110,7 @@ static void on_thread_event(rb_event_flag_t event, const rb_internal_thread_even
  */
 static void on_gc_event(VALUE tpval, void *user_data)
 {
-    (void)user_data;
+    if (!current_generation_p(user_data)) return;
     if (!atomic_load_explicit(&recorder.active, memory_order_acquire)) return;
 
     rb_event_flag_t flag = rb_tracearg_event_flag(rb_tracearg_from_tracepoint(tpval));
@@ -147,7 +160,7 @@ void rv_recorder_start(size_t buffer_capacity, unsigned options)
 {
     if (rv_recorder_active_p()) rb_raise(rb_eRuntimeError, "recorder is already running");
 
-    if (recorder.buffer && rv_event_buffer_capacity(recorder.buffer) != buffer_capacity) {
+    if (recorder.buffer && rv_event_buffer_capacity(recorder.buffer) != rv_event_buffer_round_capacity(buffer_capacity)) {
         rv_event_buffer_free(recorder.buffer);
         recorder.buffer = NULL;
     }
@@ -170,6 +183,7 @@ void rv_recorder_start(size_t buffer_capacity, unsigned options)
     /* the starting thread gets its serial before any hook can observe it */
     rv_thread_serial_current();
 
+    recorder.generation++;
     atomic_store_explicit(&recorder.active, true, memory_order_release);
 
     recorder.started_at_ns = rv_monotonic_now_ns();
@@ -188,11 +202,11 @@ void rv_recorder_start(size_t buffer_capacity, unsigned options)
         RUBY_INTERNAL_THREAD_EVENT_RESUMED |
         RUBY_INTERNAL_THREAD_EVENT_SUSPENDED |
         RUBY_INTERNAL_THREAD_EVENT_EXITED,
-        NULL);
+        (void *)recorder.generation);
 
     if (options & RV_RECORDER_OPT_GC_EVENTS) {
         recorder.gc_tracepoint = rb_tracepoint_new(Qnil,
-            RUBY_INTERNAL_EVENT_GC_ENTER | RUBY_INTERNAL_EVENT_GC_EXIT, on_gc_event, NULL);
+            RUBY_INTERNAL_EVENT_GC_ENTER | RUBY_INTERNAL_EVENT_GC_EXIT, on_gc_event, (void *)recorder.generation);
         rb_tracepoint_enable(recorder.gc_tracepoint);
     }
 }
@@ -226,9 +240,20 @@ void rv_recorder_stop(void)
 void rv_recorder_reset_after_fork(void)
 {
     atomic_store_explicit(&recorder.active, false, memory_order_release);
-    /* the inherited hook stays registered but inert; see recorder.h */
+
+    /*
+     * The inherited hook stays registered (see recorder.h) but will never
+     * match the generation again. Disabling a tracepoint only needs the
+     * GVL, which the child holds here, so that one is switched off for real.
+     */
+    recorder.generation++;
     recorder.hook = NULL;
-    recorder.gc_tracepoint = Qnil;
+    if (!NIL_P(recorder.gc_tracepoint)) {
+        rb_tracepoint_disable(recorder.gc_tracepoint);
+        recorder.gc_tracepoint = Qnil;
+    }
+
+    rv_thread_identity_reset_after_fork();
     if (recorder.buffer) rv_event_buffer_reset(recorder.buffer);
     recorder.stopped_at_ns = rv_monotonic_now_ns();
 }
@@ -267,7 +292,9 @@ size_t rv_recorder_drain(size_t limit, rv_drain_callback yield, void *arg)
     /*
      * Bookkeeping events are pushed *after* the batch so they get a real
      * sequence number and, if the ring was full, a slot that is now free.
-     * They describe what happened between the previous drain and now.
+     * They describe what happened between the previous drain and now. The
+     * loop below pops at most two more events: normally exactly those, or,
+     * when the batch stopped at `limit`, whatever was queued next.
      */
     report_counter(rv_event_buffer_dropped(recorder.buffer), &recorder.dropped_reported, RV_EVENT_EVENTS_DROPPED);
     report_counter(atomic_load(&recorder.threads_unidentified), &recorder.unidentified_reported, RV_EVENT_THREADS_UNIDENTIFIED);
@@ -277,7 +304,7 @@ size_t rv_recorder_drain(size_t limit, rv_drain_callback yield, void *arg)
     }
 
     recorder.events_recorded += count;
-    recorder.drain_count++;
+    if (count > 0) recorder.drain_count++;
     return count;
 }
 

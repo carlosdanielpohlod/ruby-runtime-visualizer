@@ -33,17 +33,16 @@ struct rv_event_buffer {
     _Atomic uint64_t high_water_mark;
 };
 
-static size_t round_up_pow2(size_t n)
+size_t rv_event_buffer_round_capacity(size_t capacity)
 {
-    size_t p = 1;
-    while (p < n) p <<= 1;
+    size_t p = 2;
+    while (p < capacity) p <<= 1;
     return p;
 }
 
 rv_event_buffer *rv_event_buffer_new(size_t capacity)
 {
-    if (capacity < 2) capacity = 2;
-    capacity = round_up_pow2(capacity);
+    capacity = rv_event_buffer_round_capacity(capacity);
 
     rv_event_buffer *buffer = aligned_alloc(RV_CACHE_LINE, sizeof(*buffer));
     if (!buffer) return NULL;

@@ -211,9 +211,10 @@ RSpec.describe RuntimeVisualizer::Native do
       Dir.mktmpdir do |dir|
         parent_path = File.join(dir, "parent.rvtrace")
         child_pid = nil
-        RuntimeVisualizer.trace(parent_path, probes: []) do
+        RuntimeVisualizer.trace(parent_path) do
           child_pid = fork do
             Thread.new { spin(10_000) }.join
+            GC.start
             exit(0)
           end
           Process.wait(child_pid)
@@ -230,7 +231,14 @@ RSpec.describe RuntimeVisualizer::Native do
         expect(child.header["process_id"]).to eq(child_pid)
         expect(child.complete?).to be(true)
         expect(child.events.first.type).to eq("tracing_started")
-        expect(child.events.map(&:type)).to include("thread_started", "thread_exited")
+        # the inherited hook and tracepoint must not double every event
+        expect(child.events.count { |e| e.type == "thread_started" }).to eq(1)
+        expect(child.events.count { |e| e.type == "thread_exited" }).to eq(1)
+        expect(child.events.count { |e| e.type == "gc_enter" }).to eq(child.events.count { |e| e.type == "gc_exit" })
+        # the child's main thread is the process itself, not the parent's thread
+        expect(child.events.first.native_thread_id).to eq(child_pid)
+        # the recorder's own drain lock around fork stays out of the parent's trace
+        expect(parent.events.map(&:type)).not_to include("mutex_lock_wait")
       end
     end
   end

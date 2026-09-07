@@ -74,6 +74,9 @@ typedef struct {
 
 typedef struct rv_event_buffer rv_event_buffer;
 
+/* The capacity a request will actually get: the next power of two. */
+size_t rv_event_buffer_round_capacity(size_t capacity);
+
 /* capacity is rounded up to a power of two; returns NULL on allocation failure */
 rv_event_buffer *rv_event_buffer_new(size_t capacity);
 void rv_event_buffer_free(rv_event_buffer *buffer);

@@ -37,7 +37,7 @@ typedef struct {
     uint64_t threads_unidentified; /* events whose thread could not be identified */
     uint64_t started_at_ns;
     uint64_t stopped_at_ns;        /* 0 while running */
-    uint64_t drain_count;
+    uint64_t drain_count;          /* drains that moved at least one event */
     bool     active;
 } rv_recorder_stats;
 

@@ -57,6 +57,9 @@ bool rv_thread_identity_attached_to_thread_p(void);
 /* gettid(), cached per native thread. */
 uint32_t rv_native_thread_id(void);
 
+/* In a forked child: the cached gettid() belongs to the parent's thread. */
+void rv_thread_identity_reset_after_fork(void);
+
 /* CLOCK_MONOTONIC in nanoseconds. vDSO backed on Linux, no syscall. */
 uint64_t rv_monotonic_now_ns(void);
 

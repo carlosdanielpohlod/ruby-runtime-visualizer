@@ -46,9 +46,10 @@ static uint32_t serial_of(VALUE thread)
      * example READY fired by a waker while the thread itself fires
      * SUSPENDED); the loser would overwrite the winner's serial and the
      * thread would appear under two ids. In practice STARTED always comes
-     * first and is single-caller, and pre-existing threads are registered
-     * from Ruby before the hook is installed. The consequence of the race
-     * is cosmetic, never a crash, so no lock is taken here.
+     * first and is single-caller, and threads that already exist when a
+     * session starts are registered from Ruby before the hook is installed.
+     * The consequence of the race is cosmetic, never a crash, so no lock is
+     * taken here.
      */
     uint32_t serial = assign_serial();
     rb_internal_thread_specific_set(thread, serial_key, (void *)(uintptr_t)serial);
@@ -140,6 +141,11 @@ uint32_t rv_native_thread_id(void)
 #endif
     }
     return tls_native_thread_id;
+}
+
+void rv_thread_identity_reset_after_fork(void)
+{
+    tls_native_thread_id = 0;
 }
 
 uint64_t rv_monotonic_now_ns(void)
